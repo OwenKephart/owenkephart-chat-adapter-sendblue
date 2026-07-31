@@ -1,9 +1,17 @@
 import type SendblueAPI from "sendblue";
 
-export interface SendblueAdapterConfig {
+export interface SendblueCredentials {
   apiKey: string;
   apiSecret: string;
   defaultFromNumber: string;
+}
+
+/** Resolves credentials before the adapter creates its Sendblue API client. */
+export type SendblueCredentialsProvider = () =>
+  | SendblueCredentials
+  | Promise<SendblueCredentials>;
+
+export interface SendblueAdapterConfig extends SendblueCredentials {
   webhookSecret?: string;
   /**
    * Header name Sendblue uses to deliver the webhook secret.

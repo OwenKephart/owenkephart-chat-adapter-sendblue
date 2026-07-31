@@ -21,9 +21,10 @@ mock.module("sendblue", () => ({
 }));
 
 const { SendblueAdapter } = await import("../adapter");
+const { createSendblueAdapter } = await import("../index");
 
 function createAdapter(overrides: Record<string, unknown> = {}) {
-  return new SendblueAdapter({
+  return createSendblueAdapter({
     apiKey: "test-key",
     apiSecret: "test-secret",
     defaultFromNumber: "+13137386158",
@@ -69,6 +70,33 @@ describe("SendblueAdapter", () => {
     groupSendMock.mockClear();
     postMock.mockClear();
     listMock.mockClear();
+  });
+
+  test("defers credential resolution until the SDK is needed", async () => {
+    const credentials = mock(() => ({
+      apiKey: "test-key",
+      apiSecret: "test-secret",
+      defaultFromNumber: "+13137386158",
+    }));
+    const adapter = createSendblueAdapter({ credentials });
+
+    expect(credentials).not.toHaveBeenCalled();
+    await adapter.getSdk();
+    expect(credentials).toHaveBeenCalledTimes(1);
+    await adapter.getSdk();
+    expect(credentials).toHaveBeenCalledTimes(1);
+  });
+
+  test("validates lazy credentials when the SDK is first needed", async () => {
+    const adapter = createSendblueAdapter({
+      credentials: () => ({
+        apiKey: "",
+        apiSecret: "test-secret",
+        defaultFromNumber: "+13137386158",
+      }),
+    });
+
+    await expect(adapter.getSdk()).rejects.toThrow("Sendblue API key is required");
   });
 
   // -------------------------------------------------------------------------

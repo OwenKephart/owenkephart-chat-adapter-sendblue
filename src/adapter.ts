@@ -19,6 +19,8 @@ import SendblueAPI from "sendblue";
 import { toPlainText } from "./format-converter";
 import type {
   SendblueAdapterConfig,
+  SendblueCredentials,
+  SendblueCredentialsProvider,
   SendblueMessagePayload,
   SendblueReaction,
   SendblueThreadId,
@@ -38,17 +40,20 @@ export class SendblueAdapter
 
   private chat: ChatInstance | null = null;
   private logger: Logger;
-  private config: SendblueAdapterConfig;
-  private sdk: SendblueAPI;
+  private config: Omit<SendblueAdapterConfig, keyof SendblueCredentials> & {
+    credentials: SendblueCredentialsProvider;
+  };
+  private sdk: SendblueAPI | null = null;
 
-  constructor(config: SendblueAdapterConfig & { logger?: Logger }) {
+  constructor(
+    config: Omit<SendblueAdapterConfig, keyof SendblueCredentials> & {
+      credentials: SendblueCredentialsProvider;
+      logger?: Logger;
+    },
+  ) {
     this.config = config;
     this.userName = "midday";
     this.logger = config.logger ?? new ConsoleLogger();
-    this.sdk = new SendblueAPI({
-      apiKey: config.apiKey,
-      apiSecret: config.apiSecret,
-    });
   }
 
   // ---------------------------------------------------------------------------
@@ -252,13 +257,13 @@ export class SendblueAdapter
     let response: SendblueAPI.MessageResponse;
 
     if (decoded.groupId) {
-      response = await this.sdk.groups.sendMessage({
+      response = await (await this.getSdk()).groups.sendMessage({
         from_number: decoded.fromNumber,
         content: text,
         group_id: decoded.groupId,
       });
     } else {
-      response = await this.sdk.messages.send({
+      response = await (await this.getSdk()).messages.send({
         number: decoded.contactNumber!,
         from_number: decoded.fromNumber,
         content: text,
@@ -282,7 +287,7 @@ export class SendblueAdapter
     const decoded = this.decodeThreadId(threadId);
     if (decoded.groupId) return;
 
-    await this.sdk.messages.send({
+    await (await this.getSdk()).messages.send({
       number: decoded.contactNumber!,
       from_number: decoded.fromNumber,
       content: content ?? "",
@@ -372,7 +377,7 @@ export class SendblueAdapter
       return;
     }
 
-    await this.sdk.post("/api/send-reaction", {
+    await (await this.getSdk()).post("/api/send-reaction", {
       body: {
         from_number: decoded.fromNumber,
         message_handle: messageId,
@@ -402,7 +407,7 @@ export class SendblueAdapter
     const offset =
       options?.cursor != null ? Number.parseInt(options.cursor, 10) : 0;
 
-    const result = await this.sdk.messages.list({
+    const result = await (await this.getSdk()).messages.list({
       limit,
       offset,
       order_by: "sentAt",
@@ -453,7 +458,7 @@ export class SendblueAdapter
     }
 
     try {
-      await this.sdk.typingIndicators.send({
+      await (await this.getSdk()).typingIndicators.send({
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
       });
@@ -478,7 +483,7 @@ export class SendblueAdapter
     const decoded = this.decodeThreadId(threadId);
     if (!decoded.contactNumber) return;
 
-    await this.sdk.post("/api/mark-read", {
+    await (await this.getSdk()).post("/api/mark-read", {
       body: {
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
@@ -489,15 +494,28 @@ export class SendblueAdapter
   async evaluateService(
     number: string,
   ): Promise<{ number?: string; service?: "iMessage" | "SMS" }> {
-    return this.sdk.lookups.lookupNumber({ number });
+    return (await this.getSdk()).lookups.lookupNumber({ number });
   }
 
   async listLines(): Promise<unknown> {
-    return this.sdk.get("/api/lines");
+    return (await this.getSdk()).get("/api/lines");
   }
 
-  /** Direct access to the official Sendblue SDK client */
-  getSdk(): SendblueAPI {
+  /**
+   * Direct access to the official Sendblue SDK client.
+   *
+   * The credentials provider is invoked once when this client is first needed.
+   * Create a new adapter when Connect rotates credentials.
+   */
+  async getSdk(): Promise<SendblueAPI> {
+    if (this.sdk) return this.sdk;
+
+    const credentials = await this.config.credentials();
+    assertCredentials(credentials);
+    this.sdk = new SendblueAPI({
+      apiKey: credentials.apiKey,
+      apiSecret: credentials.apiSecret,
+    });
     return this.sdk;
   }
 
@@ -598,5 +616,25 @@ export class SendblueAdapter
         return Buffer.from(await res.arrayBuffer());
       },
     };
+  }
+}
+
+function assertCredentials(
+  credentials: SendblueCredentials,
+): asserts credentials is SendblueCredentials {
+  if (!credentials.apiKey) {
+    throw new Error(
+      "Sendblue API key is required. Pass it in config or set SENDBLUE_API_KEY.",
+    );
+  }
+  if (!credentials.apiSecret) {
+    throw new Error(
+      "Sendblue API secret is required. Pass it in config or set SENDBLUE_API_SECRET.",
+    );
+  }
+  if (!credentials.defaultFromNumber) {
+    throw new Error(
+      "Sendblue from_number is required. Pass it in config or set SENDBLUE_FROM_NUMBER.",
+    );
   }
 }

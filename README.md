@@ -46,6 +46,26 @@ createSendblueAdapter({
 });
 ```
 
+### Lazy credentials
+
+For deployments that obtain credentials at runtime (such as Vercel Connect),
+pass a `credentials` provider. The adapter resolves it only when it first
+needs the Sendblue SDK, so constructing the adapter does not require secrets
+in the process environment:
+
+```ts
+createSendblueAdapter({
+  credentials: async () => ({
+    apiKey: "sb-api-key-...",
+    apiSecret: "sb-api-secret-...",
+    defaultFromNumber: "+14155551234",
+  }),
+});
+```
+
+The resolved SDK client is reused by the adapter. Recreate the adapter if the
+underlying credential source rotates its values.
+
 ## Webhooks
 
 Point your Sendblue webhook URLs to your server. The adapter handles three webhook types:
