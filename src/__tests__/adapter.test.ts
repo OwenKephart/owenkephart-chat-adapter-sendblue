@@ -32,6 +32,20 @@ function createAdapter(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function installChatProcessMessageSpy(adapter: SendblueAdapter) {
+  const processMessage = mock(() => Promise.resolve());
+  adapter.initialize({
+    getLogger: () => ({
+      debug: () => {},
+      error: () => {},
+      info: () => {},
+      warn: () => {},
+    }),
+    processMessage,
+  } as never);
+  return processMessage;
+}
+
 function makePayload(
   overrides: Partial<SendblueMessagePayload> = {},
 ): SendblueMessagePayload {
@@ -266,8 +280,9 @@ describe("SendblueAdapter", () => {
       expect(response.status).toBe(401);
     });
 
-    test("accepts request with correct webhook secret", async () => {
+    test("dispatches an event for the configured Sendblue line", async () => {
       const adapter = createAdapter();
+      const processMessage = installChatProcessMessageSpy(adapter);
       const request = new Request("https://example.com/webhook", {
         method: "POST",
         headers: { "sb-signing-secret": "test-webhook-secret" },
@@ -277,6 +292,7 @@ describe("SendblueAdapter", () => {
       const response = await adapter.handleWebhook(request);
 
       expect(response.status).toBe(200);
+      expect(processMessage).toHaveBeenCalledTimes(1);
     });
 
     test("returns 400 for invalid JSON body", async () => {
@@ -292,8 +308,9 @@ describe("SendblueAdapter", () => {
       expect(response.status).toBe(400);
     });
 
-    test("ignores events for a different Sendblue line", async () => {
+    test("does not dispatch events for a different Sendblue line", async () => {
       const adapter = createAdapter();
+      const processMessage = installChatProcessMessageSpy(adapter);
       const request = new Request("https://example.com/webhook", {
         method: "POST",
         headers: { "sb-signing-secret": "test-webhook-secret" },
@@ -303,10 +320,12 @@ describe("SendblueAdapter", () => {
       const response = await adapter.handleWebhook(request);
 
       expect(response.status).toBe(200);
+      expect(processMessage).not.toHaveBeenCalled();
     });
 
-    test("accepts explicitly allowed Sendblue lines", async () => {
+    test("dispatches events for explicitly allowed Sendblue lines", async () => {
       const adapter = createAdapter({ allowedFromNumbers: ["+19995550123"] });
+      const processMessage = installChatProcessMessageSpy(adapter);
       const request = new Request("https://example.com/webhook", {
         method: "POST",
         headers: { "sb-signing-secret": "test-webhook-secret" },
@@ -316,6 +335,7 @@ describe("SendblueAdapter", () => {
       const response = await adapter.handleWebhook(request);
 
       expect(response.status).toBe(200);
+      expect(processMessage).toHaveBeenCalledTimes(1);
     });
   });
 
