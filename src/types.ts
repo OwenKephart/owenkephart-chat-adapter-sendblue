@@ -24,6 +24,11 @@ export interface SendblueAdapterConfig extends SendblueCredentials {
    * @default ["iMessage"]
    */
   allowedServices?: SendblueService[];
+  /**
+   * Sendblue lines accepted by this adapter. Defaults to the configured
+   * `defaultFromNumber` so unrelated lines cannot share the same webhook.
+   */
+  allowedFromNumbers?: readonly string[];
 }
 
 export type SendblueService = "iMessage" | "SMS" | "RCS" | "sms";

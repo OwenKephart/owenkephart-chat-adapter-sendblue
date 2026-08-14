@@ -182,6 +182,26 @@ createSendblueAdapter({
 });
 ```
 
+## Sending-line isolation
+
+Inbound webhooks are accepted only for `defaultFromNumber` by default. This
+keeps unrelated lines in the same Sendblue account from sharing a bot webhook.
+For an intentional multi-line bot, specify every accepted line:
+
+```ts
+createSendblueAdapter({
+  allowedFromNumbers: ["+14155551234", "+14155559876"],
+});
+```
+
+## Adapter capabilities
+
+- Group media is sent through Sendblue's group-message endpoint.
+- Sendblue does not support editing or unsending a recipient-visible message,
+  or removing a tapback. Those methods throw Chat SDK's
+  `NotImplementedError`, allowing hosts to degrade gracefully.
+
+
 ## Thread ID format
 
 Thread IDs encode the Sendblue line number and contact (or group) so that conversations are sticky to a specific phone line:

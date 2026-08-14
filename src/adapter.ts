@@ -14,7 +14,13 @@ import type {
   ThreadInfo,
   WebhookOptions,
 } from "chat";
-import { ConsoleLogger, Message, parseMarkdown, stringifyMarkdown } from "chat";
+import {
+  ConsoleLogger,
+  Message,
+  NotImplementedError,
+  parseMarkdown,
+  stringifyMarkdown,
+} from "chat";
 import SendblueAPI from "sendblue";
 import { toPlainText } from "./format-converter";
 import type {
@@ -157,6 +163,12 @@ export class SendblueAdapter
 
         return new Response("OK", { status: 200 });
       }
+      if (!(await this.isLineAllowed(payload))) {
+        this.logger.warn("Sendblue webhook filtered by line", {
+          sendblueNumber: this.fromNumberFromPayload(payload),
+        });
+        return new Response("OK", { status: 200 });
+      }
 
       if (!payload.is_outbound && payload.status === "RECEIVED") {
         await this.processInboundMessage(payload, options);
@@ -285,9 +297,18 @@ export class SendblueAdapter
     content?: string,
   ): Promise<void> {
     const decoded = this.decodeThreadId(threadId);
-    if (decoded.groupId) return;
+    const sdk = await this.getSdk();
+    if (decoded.groupId) {
+      await sdk.groups.sendMessage({
+        from_number: decoded.fromNumber,
+        content: content ?? "",
+        group_id: decoded.groupId,
+        media_url: mediaUrl,
+      });
+      return;
+    }
 
-    await (await this.getSdk()).messages.send({
+    await sdk.messages.send({
       number: decoded.contactNumber!,
       from_number: decoded.fromNumber,
       content: content ?? "",
@@ -346,14 +367,14 @@ export class SendblueAdapter
     _messageId: string,
     _message: AdapterPostableMessage,
   ): Promise<RawMessage<SendblueMessagePayload>> {
-    throw new Error(
+    throw new NotImplementedError(
       "Sendblue does not support message editing. iMessage messages cannot be edited via API.",
     );
   }
 
   async deleteMessage(_threadId: string, _messageId: string): Promise<void> {
-    this.logger.warn(
-      "Sendblue deleteMessage is a soft-delete only — it does not unsend on the recipient's device",
+    throw new NotImplementedError(
+      "Sendblue cannot unsend messages from the recipient's device.",
     );
   }
 
@@ -391,7 +412,7 @@ export class SendblueAdapter
     _messageId: string,
     _emoji: EmojiValue | string,
   ): Promise<void> {
-    this.logger.debug("Sendblue does not support removing reactions via API");
+    throw new NotImplementedError("Sendblue does not support removing reactions via API.");
   }
 
   // ---------------------------------------------------------------------------
@@ -555,9 +576,7 @@ export class SendblueAdapter
   }
 
   private threadIdFromPayload(payload: SendblueMessagePayload): string {
-    const fromNumber =
-      payload.sendblue_number ??
-      (payload.is_outbound ? payload.from_number : payload.to_number);
+    const fromNumber = this.fromNumberFromPayload(payload);
 
     if (payload.group_id && payload.group_id.length > 0) {
       return this.encodeThreadId({ fromNumber, groupId: payload.group_id });
@@ -573,6 +592,20 @@ export class SendblueAdapter
   private isServiceAllowed(service: string): boolean {
     const allowed = this.config.allowedServices ?? DEFAULT_ALLOWED_SERVICES;
     return allowed.some((s) => s.toLowerCase() === service.toLowerCase());
+  }
+
+  private fromNumberFromPayload(payload: SendblueMessagePayload): string {
+    const fromNumber =
+      payload.sendblue_number ??
+      (payload.is_outbound ? payload.from_number : payload.to_number);
+    if (!fromNumber) throw new Error("Sendblue webhook is missing its sending line.");
+    return fromNumber;
+  }
+
+  private async isLineAllowed(payload: SendblueMessagePayload): Promise<boolean> {
+    const configured = this.config.allowedFromNumbers;
+    const allowed = configured ?? [(await this.config.credentials()).defaultFromNumber];
+    return allowed.includes(this.fromNumberFromPayload(payload));
   }
 
   private resolveReaction(name: string): SendblueReaction | null {
