@@ -47,6 +47,7 @@ export function createSendblueAdapter(
     statusCallbackUrl:
       config?.statusCallbackUrl ?? process.env.SENDBLUE_STATUS_CALLBACK_URL,
     allowedServices: config?.allowedServices,
+    allowedFromNumbers: config?.allowedFromNumbers,
     logger: config?.logger,
   });
 }

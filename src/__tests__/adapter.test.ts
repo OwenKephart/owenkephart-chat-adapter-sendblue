@@ -229,7 +229,7 @@ describe("SendblueAdapter", () => {
       expect(args.content).toBe("");
     });
 
-    test("skips sending for group threads", async () => {
+    test("sends media for group threads", async () => {
       const adapter = createAdapter();
       const threadId = adapter.encodeThreadId({
         fromNumber: "+13137386158",
@@ -239,6 +239,12 @@ describe("SendblueAdapter", () => {
       await adapter.sendMediaMessage(threadId, "https://example.com/file.vcf");
 
       expect(sendMock).not.toHaveBeenCalled();
+      expect(groupSendMock).toHaveBeenCalledWith({
+        from_number: "+13137386158",
+        content: "",
+        group_id: "group_xyz",
+        media_url: "https://example.com/file.vcf",
+      });
     });
   });
 
@@ -284,6 +290,51 @@ describe("SendblueAdapter", () => {
       const response = await adapter.handleWebhook(request);
 
       expect(response.status).toBe(400);
+    });
+
+    test("ignores events for a different Sendblue line", async () => {
+      const adapter = createAdapter();
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: { "sb-signing-secret": "test-webhook-secret" },
+        body: JSON.stringify(makePayload({ to_number: "+19995550123" })),
+      });
+
+      const response = await adapter.handleWebhook(request);
+
+      expect(response.status).toBe(200);
+    });
+
+    test("accepts explicitly allowed Sendblue lines", async () => {
+      const adapter = createAdapter({ allowedFromNumbers: ["+19995550123"] });
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: { "sb-signing-secret": "test-webhook-secret" },
+        body: JSON.stringify(makePayload({ to_number: "+19995550123" })),
+      });
+
+      const response = await adapter.handleWebhook(request);
+
+      expect(response.status).toBe(200);
+    });
+  });
+
+  describe("unsupported capabilities", () => {
+    test("uses Chat SDK's NotImplementedError", async () => {
+      const adapter = createAdapter();
+
+      await expect(adapter.editMessage("thread", "message", "text")).rejects.toMatchObject({
+        name: "NotImplementedError",
+        code: "NOT_IMPLEMENTED",
+      });
+      await expect(adapter.deleteMessage("thread", "message")).rejects.toMatchObject({
+        name: "NotImplementedError",
+        code: "NOT_IMPLEMENTED",
+      });
+      await expect(adapter.removeReaction("thread", "message", "love")).rejects.toMatchObject({
+        name: "NotImplementedError",
+        code: "NOT_IMPLEMENTED",
+      });
     });
   });
 
