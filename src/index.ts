@@ -1,12 +1,13 @@
 import type { Logger } from "chat";
 import { SendblueAdapter } from "./adapter";
-import type { SendblueAdapterConfig } from "./types";
+import type { SendblueAdapterConfig, SendblueWebhookVerifier } from "./types";
 
 export { SendblueAdapter } from "./adapter";
 export { toPlainText } from "./format-converter";
 export type {
   SendblueAdapterConfig,
   SendblueMessagePayload,
+  SendblueWebhookVerifier,
   SendblueReaction,
   SendblueService,
   SendblueThreadId,
@@ -44,6 +45,7 @@ export function createSendblueAdapter(
     defaultFromNumber,
     webhookSecret: config?.webhookSecret ?? process.env.SENDBLUE_WEBHOOK_SECRET,
     webhookSecretHeader: config?.webhookSecretHeader,
+    webhookVerifier: config?.webhookVerifier,
     statusCallbackUrl:
       config?.statusCallbackUrl ?? process.env.SENDBLUE_STATUS_CALLBACK_URL,
     allowedServices: config?.allowedServices,

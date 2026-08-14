@@ -1,5 +1,14 @@
 import type SendblueAPI from "sendblue";
 
+/**
+ * Verifies a webhook before its payload is parsed. A Connect integration can
+ * validate its OIDC assertion here instead of requiring a Sendblue secret.
+ */
+export type SendblueWebhookVerifier = (
+  request: Request,
+  rawBody: string,
+) => boolean | Response | Promise<boolean | Response>;
+
 export interface SendblueAdapterConfig {
   apiKey: string;
   apiSecret: string;
@@ -10,6 +19,8 @@ export interface SendblueAdapterConfig {
    * @default "sb-signing-secret"
    */
   webhookSecretHeader?: string;
+  /** Takes precedence over `webhookSecret` when provided. */
+  webhookVerifier?: SendblueWebhookVerifier;
   statusCallbackUrl?: string;
   /**
    * Which messaging services to accept from inbound webhooks.
