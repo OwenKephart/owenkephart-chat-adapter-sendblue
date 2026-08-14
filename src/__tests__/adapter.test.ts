@@ -314,6 +314,36 @@ describe("SendblueAdapter", () => {
       expect(response.status).toBe(403);
     });
 
+    test("fails closed when webhookVerifier throws", async () => {
+      const adapter = createAdapter({
+        webhookVerifier: () => {
+          throw new Error("invalid OIDC token");
+        },
+      });
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        body: "{}",
+      });
+
+      const response = await adapter.handleWebhook(request);
+
+      expect(response.status).toBe(401);
+    });
+
+    test("fails closed when webhookVerifier rejects", async () => {
+      const adapter = createAdapter({
+        webhookVerifier: async () => Promise.reject(new Error("invalid OIDC token")),
+      });
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        body: "{}",
+      });
+
+      const response = await adapter.handleWebhook(request);
+
+      expect(response.status).toBe(401);
+    });
+
     test("returns 400 for invalid JSON body", async () => {
       const adapter = createAdapter();
       const request = new Request("https://example.com/webhook", {

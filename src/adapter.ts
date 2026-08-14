@@ -116,9 +116,16 @@ export class SendblueAdapter
     }
 
     if (this.config.webhookVerifier) {
-      const verification = await this.config.webhookVerifier(request, rawBody);
-      if (verification instanceof Response) return verification;
-      if (!verification) return new Response("Unauthorized", { status: 401 });
+      try {
+        const verification = await this.config.webhookVerifier(request, rawBody);
+        if (verification instanceof Response) return verification;
+        if (!verification) return new Response("Unauthorized", { status: 401 });
+      } catch {
+        // Verifiers may include bearer-token details in their errors; do not
+        // expose those details through application logs.
+        this.logger.warn("Sendblue webhook verification failed");
+        return new Response("Unauthorized", { status: 401 });
+      }
     } else if (this.config.webhookSecret) {
       const headerName =
         this.config.webhookSecretHeader ?? DEFAULT_WEBHOOK_SECRET_HEADER;
