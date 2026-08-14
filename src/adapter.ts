@@ -158,7 +158,7 @@ export class SendblueAdapter
 
         return new Response("OK", { status: 200 });
       }
-      if (!(await this.isLineAllowed(payload))) {
+      if (!this.isLineAllowed(payload)) {
         this.logger.warn("Sendblue webhook filtered by line", {
           sendblueNumber: this.fromNumberFromPayload(payload),
         });
@@ -584,9 +584,8 @@ export class SendblueAdapter
     return fromNumber;
   }
 
-  private async isLineAllowed(payload: SendblueMessagePayload): Promise<boolean> {
-    const configured = this.config.allowedFromNumbers;
-    const allowed = configured ?? [(await this.config.credentials()).defaultFromNumber];
+  private isLineAllowed(payload: SendblueMessagePayload): boolean {
+    const allowed = this.config.allowedFromNumbers ?? [this.config.defaultFromNumber];
     return allowed.includes(this.fromNumberFromPayload(payload));
   }
 
