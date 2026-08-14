@@ -63,8 +63,10 @@ createSendblueAdapter({
 });
 ```
 
-The resolved SDK client is reused by the adapter. Recreate the adapter if the
-underlying credential source rotates its values.
+The provider runs for every Sendblue SDK operation, so a credential source can
+rotate values without rebuilding the Chat SDK adapter. `getSdk()` also returns
+a fresh client; callers that retain it are responsible for their own refresh
+policy.
 
 ## Webhooks
 

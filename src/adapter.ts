@@ -40,17 +40,9 @@ export class SendblueAdapter
 
   private chat: ChatInstance | null = null;
   private logger: Logger;
-  private config: Omit<SendblueAdapterConfig, keyof SendblueCredentials> & {
-    credentials: SendblueCredentialsProvider;
-  };
-  private sdk: SendblueAPI | null = null;
+  private config: SendblueAdapterRuntimeConfig;
 
-  constructor(
-    config: Omit<SendblueAdapterConfig, keyof SendblueCredentials> & {
-      credentials: SendblueCredentialsProvider;
-      logger?: Logger;
-    },
-  ) {
+  constructor(config: SendblueAdapterRuntimeConfig) {
     this.config = config;
     this.userName = "midday";
     this.logger = config.logger ?? new ConsoleLogger();
@@ -256,14 +248,15 @@ export class SendblueAdapter
 
     let response: SendblueAPI.MessageResponse;
 
+    const sdk = await this.createSdk();
     if (decoded.groupId) {
-      response = await (await this.getSdk()).groups.sendMessage({
+      response = await sdk.groups.sendMessage({
         from_number: decoded.fromNumber,
         content: text,
         group_id: decoded.groupId,
       });
     } else {
-      response = await (await this.getSdk()).messages.send({
+      response = await sdk.messages.send({
         number: decoded.contactNumber!,
         from_number: decoded.fromNumber,
         content: text,
@@ -287,7 +280,7 @@ export class SendblueAdapter
     const decoded = this.decodeThreadId(threadId);
     if (decoded.groupId) return;
 
-    await (await this.getSdk()).messages.send({
+    await (await this.createSdk()).messages.send({
       number: decoded.contactNumber!,
       from_number: decoded.fromNumber,
       content: content ?? "",
@@ -377,7 +370,7 @@ export class SendblueAdapter
       return;
     }
 
-    await (await this.getSdk()).post("/api/send-reaction", {
+    await (await this.createSdk()).post("/api/send-reaction", {
       body: {
         from_number: decoded.fromNumber,
         message_handle: messageId,
@@ -407,7 +400,7 @@ export class SendblueAdapter
     const offset =
       options?.cursor != null ? Number.parseInt(options.cursor, 10) : 0;
 
-    const result = await (await this.getSdk()).messages.list({
+    const result = await (await this.createSdk()).messages.list({
       limit,
       offset,
       order_by: "sentAt",
@@ -458,7 +451,7 @@ export class SendblueAdapter
     }
 
     try {
-      await (await this.getSdk()).typingIndicators.send({
+      await (await this.createSdk()).typingIndicators.send({
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
       });
@@ -483,7 +476,7 @@ export class SendblueAdapter
     const decoded = this.decodeThreadId(threadId);
     if (!decoded.contactNumber) return;
 
-    await (await this.getSdk()).post("/api/mark-read", {
+    await (await this.createSdk()).post("/api/mark-read", {
       body: {
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
@@ -494,29 +487,30 @@ export class SendblueAdapter
   async evaluateService(
     number: string,
   ): Promise<{ number?: string; service?: "iMessage" | "SMS" }> {
-    return (await this.getSdk()).lookups.lookupNumber({ number });
+    return (await this.createSdk()).lookups.lookupNumber({ number });
   }
 
   async listLines(): Promise<unknown> {
-    return (await this.getSdk()).get("/api/lines");
+    return (await this.createSdk()).get("/api/lines");
   }
 
   /**
-   * Direct access to the official Sendblue SDK client.
+   * Creates an official Sendblue SDK client with freshly resolved credentials.
    *
-   * The credentials provider is invoked once when this client is first needed.
-   * Create a new adapter when Connect rotates credentials.
+   * Prefer adapter methods where possible. Callers that retain this client are
+   * responsible for refreshing it when their credential source rotates.
    */
   async getSdk(): Promise<SendblueAPI> {
-    if (this.sdk) return this.sdk;
+    return this.createSdk();
+  }
 
+  private async createSdk(): Promise<SendblueAPI> {
     const credentials = await this.config.credentials();
     assertCredentials(credentials);
-    this.sdk = new SendblueAPI({
+    return new SendblueAPI({
       apiKey: credentials.apiKey,
       apiSecret: credentials.apiSecret,
     });
-    return this.sdk;
   }
 
   // ---------------------------------------------------------------------------
@@ -617,6 +611,12 @@ export class SendblueAdapter
       },
     };
   }
+}
+
+interface SendblueAdapterRuntimeConfig
+  extends Omit<SendblueAdapterConfig, keyof SendblueCredentials> {
+  credentials: SendblueCredentialsProvider;
+  logger?: Logger;
 }
 
 function assertCredentials(

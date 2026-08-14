@@ -72,7 +72,7 @@ describe("SendblueAdapter", () => {
     listMock.mockClear();
   });
 
-  test("defers credential resolution until the SDK is needed", async () => {
+  test("resolves credentials only when an SDK operation needs them", async () => {
     const credentials = mock(() => ({
       apiKey: "test-key",
       apiSecret: "test-secret",
@@ -83,11 +83,27 @@ describe("SendblueAdapter", () => {
     expect(credentials).not.toHaveBeenCalled();
     await adapter.getSdk();
     expect(credentials).toHaveBeenCalledTimes(1);
-    await adapter.getSdk();
-    expect(credentials).toHaveBeenCalledTimes(1);
   });
 
-  test("validates lazy credentials when the SDK is first needed", async () => {
+  test("resolves fresh credentials for every SDK operation", async () => {
+    const credentials = mock(() => ({
+      apiKey: "test-key",
+      apiSecret: "test-secret",
+      defaultFromNumber: "+13137386158",
+    }));
+    const adapter = createSendblueAdapter({ credentials });
+    const threadId = adapter.encodeThreadId({
+      fromNumber: "+13137386158",
+      contactNumber: "+14155551234",
+    });
+
+    await adapter.postMessage(threadId, "First");
+    await adapter.postMessage(threadId, "Second");
+
+    expect(credentials).toHaveBeenCalledTimes(2);
+  });
+
+  test("validates lazy credentials when an SDK operation needs them", async () => {
     const adapter = createSendblueAdapter({
       credentials: () => ({
         apiKey: "",
