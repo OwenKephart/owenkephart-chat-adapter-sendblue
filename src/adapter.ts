@@ -119,7 +119,18 @@ export class SendblueAdapter
     request: Request,
     options?: WebhookOptions,
   ): Promise<Response> {
-    if (this.config.webhookSecret) {
+    let rawBody: string;
+    try {
+      rawBody = await request.text();
+    } catch {
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    if (this.config.webhookVerifier) {
+      const verification = await this.config.webhookVerifier(request, rawBody);
+      if (verification instanceof Response) return verification;
+      if (!verification) return new Response("Unauthorized", { status: 401 });
+    } else if (this.config.webhookSecret) {
       const headerName =
         this.config.webhookSecretHeader ?? DEFAULT_WEBHOOK_SECRET_HEADER;
       const headerValue = request.headers.get(headerName);
@@ -134,7 +145,7 @@ export class SendblueAdapter
 
     let body: Record<string, unknown>;
     try {
-      body = (await request.json()) as Record<string, unknown>;
+      body = JSON.parse(rawBody) as Record<string, unknown>;
     } catch {
       return new Response("Bad Request", { status: 400 });
     }

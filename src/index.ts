@@ -4,6 +4,7 @@ import type {
   SendblueAdapterConfig,
   SendblueCredentials,
   SendblueCredentialsProvider,
+  SendblueWebhookVerifier,
 } from "./types";
 
 export { SendblueAdapter } from "./adapter";
@@ -13,6 +14,7 @@ export type {
   SendblueCredentials,
   SendblueCredentialsProvider,
   SendblueMessagePayload,
+  SendblueWebhookVerifier,
   SendblueReaction,
   SendblueService,
   SendblueThreadId,
@@ -39,6 +41,7 @@ export function createSendblueAdapter(
       })),
     webhookSecret: options.webhookSecret ?? process.env.SENDBLUE_WEBHOOK_SECRET,
     webhookSecretHeader: options.webhookSecretHeader,
+    webhookVerifier: options.webhookVerifier,
     statusCallbackUrl:
       options.statusCallbackUrl ?? process.env.SENDBLUE_STATUS_CALLBACK_URL,
     allowedServices: options.allowedServices,

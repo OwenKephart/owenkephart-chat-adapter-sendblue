@@ -307,6 +307,47 @@ describe("SendblueAdapter", () => {
       expect(response.status).toBe(200);
     });
 
+    test("uses webhookVerifier before parsing and instead of the shared secret", async () => {
+      const verify = mock((_request: Request, rawBody: string) => rawBody === "{} ");
+      const adapter = createAdapter({ webhookVerifier: verify });
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: { "sb-signing-secret": "wrong-secret" },
+        body: "{} ",
+      });
+
+      const response = await adapter.handleWebhook(request);
+
+      expect(response.status).toBe(200);
+      expect(verify).toHaveBeenCalledWith(request, "{} ");
+    });
+
+    test("rejects a webhookVerifier failure before parsing", async () => {
+      const adapter = createAdapter({ webhookVerifier: () => false });
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        body: "not json",
+      });
+
+      const response = await adapter.handleWebhook(request);
+
+      expect(response.status).toBe(401);
+    });
+
+    test("returns a response from webhookVerifier", async () => {
+      const adapter = createAdapter({
+        webhookVerifier: () => new Response("forbidden", { status: 403 }),
+      });
+      const request = new Request("https://example.com/webhook", {
+        method: "POST",
+        body: "{}",
+      });
+
+      const response = await adapter.handleWebhook(request);
+
+      expect(response.status).toBe(403);
+    });
+
     test("returns 400 for invalid JSON body", async () => {
       const adapter = createAdapter();
       const request = new Request("https://example.com/webhook", {

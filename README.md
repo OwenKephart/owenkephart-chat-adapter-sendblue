@@ -84,12 +84,25 @@ app.post("/webhooks/sendblue", async (c) => {
 
 ### Webhook verification
 
-If you configure a webhook secret in Sendblue, pass it as `SENDBLUE_WEBHOOK_SECRET` (or in the config). The adapter checks the `x-webhook-secret` header on every request. You can override the header name:
+If you configure a webhook secret in Sendblue, pass it as `SENDBLUE_WEBHOOK_SECRET` (or in the config). The adapter checks the `sb-signing-secret` header on every request. You can override the header name:
 
 ```ts
 createSendblueAdapter({
   webhookSecret: "my-secret",
   webhookSecretHeader: "x-custom-header",
+});
+```
+
+For a trusted proxy such as Vercel Connect trigger forwarding, use
+`webhookVerifier`. It receives the original `Request` and unparsed request
+body, runs before JSON parsing, and replaces the shared-secret check:
+
+```ts
+createSendblueAdapter({
+  webhookVerifier: async (request, rawBody) => {
+    // Verify the proxy assertion using the request headers and raw body.
+    return true;
+  },
 });
 ```
 
