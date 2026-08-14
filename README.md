@@ -111,7 +111,7 @@ Inbound media URLs from Sendblue are parsed into Chat SDK attachment objects wit
 
 ```ts
 const adapter = chat.getAdapter("sendblue") as SendblueAdapter;
-const sdk = adapter.getSdk();
+const sdk = await adapter.getSdk();
 await sdk.messages.send({
   number: "+15551234567",
   from_number: "+14155551234",
@@ -166,7 +166,7 @@ For anything not covered by the Chat SDK adapter interface, access the official 
 
 ```ts
 const adapter = chat.getAdapter("sendblue") as SendblueAdapter;
-const sdk = adapter.getSdk();
+const sdk = await adapter.getSdk();
 
 // Use any Sendblue API method
 await sdk.contacts.list();
