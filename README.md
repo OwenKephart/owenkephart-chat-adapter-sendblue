@@ -46,6 +46,28 @@ createSendblueAdapter({
 });
 ```
 
+### Lazy credentials
+
+For deployments that obtain credentials at runtime (such as Vercel Connect),
+pass a `credentials` provider. The adapter resolves it only when it first
+needs the Sendblue SDK, so constructing the adapter does not require secrets
+in the process environment:
+
+```ts
+createSendblueAdapter({
+  credentials: async () => ({
+    apiKey: "sb-api-key-...",
+    apiSecret: "sb-api-secret-...",
+    defaultFromNumber: "+14155551234",
+  }),
+});
+```
+
+The provider runs for every Sendblue SDK operation, so a credential source can
+rotate values without rebuilding the Chat SDK adapter. `getSdk()` also returns
+a fresh client; callers that retain it are responsible for their own refresh
+policy.
+
 ## Webhooks
 
 Point your Sendblue webhook URLs to your server. The adapter handles three webhook types:
@@ -64,12 +86,25 @@ app.post("/webhooks/sendblue", async (c) => {
 
 ### Webhook verification
 
-If you configure a webhook secret in Sendblue, pass it as `SENDBLUE_WEBHOOK_SECRET` (or in the config). The adapter checks the `x-webhook-secret` header on every request. You can override the header name:
+If you configure a webhook secret in Sendblue, pass it as `SENDBLUE_WEBHOOK_SECRET` (or in the config). The adapter checks the `sb-signing-secret` header on every request. You can override the header name:
 
 ```ts
 createSendblueAdapter({
   webhookSecret: "my-secret",
   webhookSecretHeader: "x-custom-header",
+});
+```
+
+For a trusted proxy such as Vercel Connect trigger forwarding, use
+`webhookVerifier`. It receives the original `Request` and unparsed request
+body, runs before JSON parsing, and replaces the shared-secret check:
+
+```ts
+createSendblueAdapter({
+  webhookVerifier: async (request, rawBody) => {
+    // Verify the proxy assertion using the request headers and raw body.
+    return true;
+  },
 });
 ```
 
@@ -89,7 +124,7 @@ Inbound media URLs from Sendblue are parsed into Chat SDK attachment objects wit
 
 ```ts
 const adapter = chat.getAdapter("sendblue") as SendblueAdapter;
-const sdk = adapter.getSdk();
+const sdk = await adapter.getSdk();
 await sdk.messages.send({
   number: "+15551234567",
   from_number: "+14155551234",
@@ -144,7 +179,7 @@ For anything not covered by the Chat SDK adapter interface, access the official 
 
 ```ts
 const adapter = chat.getAdapter("sendblue") as SendblueAdapter;
-const sdk = adapter.getSdk();
+const sdk = await adapter.getSdk();
 
 // Use any Sendblue API method
 await sdk.contacts.list();
@@ -161,6 +196,26 @@ createSendblueAdapter({
   allowedServices: ["iMessage", "SMS", "RCS"],
 });
 ```
+
+## Sending-line isolation
+
+Inbound webhooks are accepted only for `defaultFromNumber` by default. This
+keeps unrelated lines in the same Sendblue account from sharing a bot webhook.
+For an intentional multi-line bot, specify every accepted line:
+
+```ts
+createSendblueAdapter({
+  allowedFromNumbers: ["+14155551234", "+14155559876"],
+});
+```
+
+## Adapter capabilities
+
+- Group media is sent through Sendblue's group-message endpoint.
+- Sendblue does not support editing or unsending a recipient-visible message,
+  or removing a tapback. Those methods throw Chat SDK's
+  `NotImplementedError`, allowing hosts to degrade gracefully.
+
 
 ## Thread ID format
 

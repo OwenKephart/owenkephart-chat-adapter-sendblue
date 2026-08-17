@@ -1,21 +1,45 @@
 import type SendblueAPI from "sendblue";
 
-export interface SendblueAdapterConfig {
+export interface SendblueCredentials {
   apiKey: string;
   apiSecret: string;
   defaultFromNumber: string;
+}
+
+/**
+ * Verifies a webhook before its payload is parsed. A Connect integration can
+ * validate its OIDC assertion here instead of requiring a Sendblue secret.
+ */
+export type SendblueWebhookVerifier = (
+  request: Request,
+  rawBody: string,
+) => boolean | Response | Promise<boolean | Response>;
+
+/** Resolves credentials before the adapter creates its Sendblue API client. */
+export type SendblueCredentialsProvider = () =>
+  | SendblueCredentials
+  | Promise<SendblueCredentials>;
+
+export interface SendblueAdapterConfig extends SendblueCredentials {
   webhookSecret?: string;
   /**
    * Header name Sendblue uses to deliver the webhook secret.
    * @default "sb-signing-secret"
    */
   webhookSecretHeader?: string;
+  /** Takes precedence over `webhookSecret` when provided. */
+  webhookVerifier?: SendblueWebhookVerifier;
   statusCallbackUrl?: string;
   /**
    * Which messaging services to accept from inbound webhooks.
    * @default ["iMessage"]
    */
   allowedServices?: SendblueService[];
+  /**
+   * Sendblue lines accepted by this adapter. Defaults to the configured
+   * `defaultFromNumber` so unrelated lines cannot share the same webhook.
+   */
+  allowedFromNumbers?: readonly string[];
 }
 
 export type SendblueService = "iMessage" | "SMS" | "RCS" | "sms";

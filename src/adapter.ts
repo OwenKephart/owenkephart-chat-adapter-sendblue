@@ -14,11 +14,19 @@ import type {
   ThreadInfo,
   WebhookOptions,
 } from "chat";
-import { ConsoleLogger, Message, parseMarkdown, stringifyMarkdown } from "chat";
+import {
+  ConsoleLogger,
+  Message,
+  NotImplementedError,
+  parseMarkdown,
+  stringifyMarkdown,
+} from "chat";
 import SendblueAPI from "sendblue";
 import { toPlainText } from "./format-converter";
 import type {
   SendblueAdapterConfig,
+  SendblueCredentials,
+  SendblueCredentialsProvider,
   SendblueMessagePayload,
   SendblueReaction,
   SendblueThreadId,
@@ -38,17 +46,12 @@ export class SendblueAdapter
 
   private chat: ChatInstance | null = null;
   private logger: Logger;
-  private config: SendblueAdapterConfig;
-  private sdk: SendblueAPI;
+  private config: SendblueAdapterRuntimeConfig;
 
-  constructor(config: SendblueAdapterConfig & { logger?: Logger }) {
+  constructor(config: SendblueAdapterRuntimeConfig) {
     this.config = config;
     this.userName = "midday";
     this.logger = config.logger ?? new ConsoleLogger();
-    this.sdk = new SendblueAPI({
-      apiKey: config.apiKey,
-      apiSecret: config.apiSecret,
-    });
   }
 
   // ---------------------------------------------------------------------------
@@ -108,7 +111,25 @@ export class SendblueAdapter
     request: Request,
     options?: WebhookOptions,
   ): Promise<Response> {
-    if (this.config.webhookSecret) {
+    let rawBody: string;
+    try {
+      rawBody = await request.text();
+    } catch {
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    if (this.config.webhookVerifier) {
+      try {
+        const verification = await this.config.webhookVerifier(request, rawBody);
+        if (verification instanceof Response) return verification;
+        if (!verification) return new Response("Unauthorized", { status: 401 });
+      } catch {
+        // Verifiers may include bearer-token details in their errors; do not
+        // expose those details through application logs.
+        this.logger.warn("Sendblue webhook verification failed");
+        return new Response("Unauthorized", { status: 401 });
+      }
+    } else if (this.config.webhookSecret) {
       const headerName =
         this.config.webhookSecretHeader ?? DEFAULT_WEBHOOK_SECRET_HEADER;
       const headerValue = request.headers.get(headerName);
@@ -123,7 +144,7 @@ export class SendblueAdapter
 
     let body: Record<string, unknown>;
     try {
-      body = (await request.json()) as Record<string, unknown>;
+      body = JSON.parse(rawBody) as Record<string, unknown>;
     } catch {
       return new Response("Bad Request", { status: 400 });
     }
@@ -150,6 +171,12 @@ export class SendblueAdapter
           service: payload.service,
         });
 
+        return new Response("OK", { status: 200 });
+      }
+      if (!(await this.isLineAllowed(payload))) {
+        this.logger.warn("Sendblue webhook filtered by line", {
+          sendblueNumber: this.fromNumberFromPayload(payload),
+        });
         return new Response("OK", { status: 200 });
       }
 
@@ -251,14 +278,15 @@ export class SendblueAdapter
 
     let response: SendblueAPI.MessageResponse;
 
+    const sdk = await this.createSdk();
     if (decoded.groupId) {
-      response = await this.sdk.groups.sendMessage({
+      response = await sdk.groups.sendMessage({
         from_number: decoded.fromNumber,
         content: text,
         group_id: decoded.groupId,
       });
     } else {
-      response = await this.sdk.messages.send({
+      response = await sdk.messages.send({
         number: decoded.contactNumber!,
         from_number: decoded.fromNumber,
         content: text,
@@ -280,9 +308,18 @@ export class SendblueAdapter
     content?: string,
   ): Promise<void> {
     const decoded = this.decodeThreadId(threadId);
-    if (decoded.groupId) return;
+    const sdk = await this.getSdk();
+    if (decoded.groupId) {
+      await sdk.groups.sendMessage({
+        from_number: decoded.fromNumber,
+        content: content ?? "",
+        group_id: decoded.groupId,
+        media_url: mediaUrl,
+      });
+      return;
+    }
 
-    await this.sdk.messages.send({
+    await sdk.messages.send({
       number: decoded.contactNumber!,
       from_number: decoded.fromNumber,
       content: content ?? "",
@@ -341,14 +378,14 @@ export class SendblueAdapter
     _messageId: string,
     _message: AdapterPostableMessage,
   ): Promise<RawMessage<SendblueMessagePayload>> {
-    throw new Error(
+    throw new NotImplementedError(
       "Sendblue does not support message editing. iMessage messages cannot be edited via API.",
     );
   }
 
   async deleteMessage(_threadId: string, _messageId: string): Promise<void> {
-    this.logger.warn(
-      "Sendblue deleteMessage is a soft-delete only — it does not unsend on the recipient's device",
+    throw new NotImplementedError(
+      "Sendblue cannot unsend messages from the recipient's device.",
     );
   }
 
@@ -372,7 +409,7 @@ export class SendblueAdapter
       return;
     }
 
-    await this.sdk.post("/api/send-reaction", {
+    await (await this.createSdk()).post("/api/send-reaction", {
       body: {
         from_number: decoded.fromNumber,
         message_handle: messageId,
@@ -386,7 +423,7 @@ export class SendblueAdapter
     _messageId: string,
     _emoji: EmojiValue | string,
   ): Promise<void> {
-    this.logger.debug("Sendblue does not support removing reactions via API");
+    throw new NotImplementedError("Sendblue does not support removing reactions via API.");
   }
 
   // ---------------------------------------------------------------------------
@@ -402,7 +439,7 @@ export class SendblueAdapter
     const offset =
       options?.cursor != null ? Number.parseInt(options.cursor, 10) : 0;
 
-    const result = await this.sdk.messages.list({
+    const result = await (await this.createSdk()).messages.list({
       limit,
       offset,
       order_by: "sentAt",
@@ -453,7 +490,7 @@ export class SendblueAdapter
     }
 
     try {
-      await this.sdk.typingIndicators.send({
+      await (await this.createSdk()).typingIndicators.send({
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
       });
@@ -478,7 +515,7 @@ export class SendblueAdapter
     const decoded = this.decodeThreadId(threadId);
     if (!decoded.contactNumber) return;
 
-    await this.sdk.post("/api/mark-read", {
+    await (await this.createSdk()).post("/api/mark-read", {
       body: {
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
@@ -489,16 +526,30 @@ export class SendblueAdapter
   async evaluateService(
     number: string,
   ): Promise<{ number?: string; service?: "iMessage" | "SMS" }> {
-    return this.sdk.lookups.lookupNumber({ number });
+    return (await this.createSdk()).lookups.lookupNumber({ number });
   }
 
   async listLines(): Promise<unknown> {
-    return this.sdk.get("/api/lines");
+    return (await this.createSdk()).get("/api/lines");
   }
 
-  /** Direct access to the official Sendblue SDK client */
-  getSdk(): SendblueAPI {
-    return this.sdk;
+  /**
+   * Creates an official Sendblue SDK client with freshly resolved credentials.
+   *
+   * Prefer adapter methods where possible. Callers that retain this client are
+   * responsible for refreshing it when their credential source rotates.
+   */
+  async getSdk(): Promise<SendblueAPI> {
+    return this.createSdk();
+  }
+
+  private async createSdk(): Promise<SendblueAPI> {
+    const credentials = await this.config.credentials();
+    assertCredentials(credentials);
+    return new SendblueAPI({
+      apiKey: credentials.apiKey,
+      apiSecret: credentials.apiSecret,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -537,9 +588,7 @@ export class SendblueAdapter
   }
 
   private threadIdFromPayload(payload: SendblueMessagePayload): string {
-    const fromNumber =
-      payload.sendblue_number ??
-      (payload.is_outbound ? payload.from_number : payload.to_number);
+    const fromNumber = this.fromNumberFromPayload(payload);
 
     if (payload.group_id && payload.group_id.length > 0) {
       return this.encodeThreadId({ fromNumber, groupId: payload.group_id });
@@ -555,6 +604,20 @@ export class SendblueAdapter
   private isServiceAllowed(service: string): boolean {
     const allowed = this.config.allowedServices ?? DEFAULT_ALLOWED_SERVICES;
     return allowed.some((s) => s.toLowerCase() === service.toLowerCase());
+  }
+
+  private fromNumberFromPayload(payload: SendblueMessagePayload): string {
+    const fromNumber =
+      payload.sendblue_number ??
+      (payload.is_outbound ? payload.from_number : payload.to_number);
+    if (!fromNumber) throw new Error("Sendblue webhook is missing its sending line.");
+    return fromNumber;
+  }
+
+  private async isLineAllowed(payload: SendblueMessagePayload): Promise<boolean> {
+    const allowed =
+      this.config.allowedFromNumbers ?? [(await this.config.credentials()).defaultFromNumber];
+    return allowed.includes(this.fromNumberFromPayload(payload));
   }
 
   private resolveReaction(name: string): SendblueReaction | null {
@@ -598,5 +661,31 @@ export class SendblueAdapter
         return Buffer.from(await res.arrayBuffer());
       },
     };
+  }
+}
+
+interface SendblueAdapterRuntimeConfig
+  extends Omit<SendblueAdapterConfig, keyof SendblueCredentials> {
+  credentials: SendblueCredentialsProvider;
+  logger?: Logger;
+}
+
+function assertCredentials(
+  credentials: SendblueCredentials,
+): asserts credentials is SendblueCredentials {
+  if (!credentials.apiKey) {
+    throw new Error(
+      "Sendblue API key is required. Pass it in config or set SENDBLUE_API_KEY.",
+    );
+  }
+  if (!credentials.apiSecret) {
+    throw new Error(
+      "Sendblue API secret is required. Pass it in config or set SENDBLUE_API_SECRET.",
+    );
+  }
+  if (!credentials.defaultFromNumber) {
+    throw new Error(
+      "Sendblue from_number is required. Pass it in config or set SENDBLUE_FROM_NUMBER.",
+    );
   }
 }

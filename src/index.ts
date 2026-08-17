@@ -1,12 +1,20 @@
 import type { Logger } from "chat";
 import { SendblueAdapter } from "./adapter";
-import type { SendblueAdapterConfig } from "./types";
+import type {
+  SendblueAdapterConfig,
+  SendblueCredentials,
+  SendblueCredentialsProvider,
+  SendblueWebhookVerifier,
+} from "./types";
 
 export { SendblueAdapter } from "./adapter";
 export { toPlainText } from "./format-converter";
 export type {
   SendblueAdapterConfig,
+  SendblueCredentials,
+  SendblueCredentialsProvider,
   SendblueMessagePayload,
+  SendblueWebhookVerifier,
   SendblueReaction,
   SendblueService,
   SendblueThreadId,
@@ -14,39 +22,30 @@ export type {
 } from "./types";
 export { REACTION_ALIASES, VALID_REACTIONS } from "./types";
 
+export type SendblueAdapterOptions = Partial<SendblueAdapterConfig> & {
+  credentials?: SendblueCredentialsProvider;
+  logger?: Logger;
+};
+
 export function createSendblueAdapter(
-  config?: Partial<SendblueAdapterConfig> & { logger?: Logger },
+  options: SendblueAdapterOptions = {},
 ): SendblueAdapter {
-  const apiKey = config?.apiKey ?? process.env.SENDBLUE_API_KEY;
-  const apiSecret = config?.apiSecret ?? process.env.SENDBLUE_API_SECRET;
-  const defaultFromNumber =
-    config?.defaultFromNumber ?? process.env.SENDBLUE_FROM_NUMBER;
-
-  if (!apiKey) {
-    throw new Error(
-      "Sendblue API key is required. Pass it in config or set SENDBLUE_API_KEY.",
-    );
-  }
-  if (!apiSecret) {
-    throw new Error(
-      "Sendblue API secret is required. Pass it in config or set SENDBLUE_API_SECRET.",
-    );
-  }
-  if (!defaultFromNumber) {
-    throw new Error(
-      "Sendblue from_number is required. Pass it in config or set SENDBLUE_FROM_NUMBER.",
-    );
-  }
-
   return new SendblueAdapter({
-    apiKey,
-    apiSecret,
-    defaultFromNumber,
-    webhookSecret: config?.webhookSecret ?? process.env.SENDBLUE_WEBHOOK_SECRET,
-    webhookSecretHeader: config?.webhookSecretHeader,
+    credentials:
+      options.credentials ??
+      (() => ({
+        apiKey: options.apiKey ?? process.env.SENDBLUE_API_KEY ?? "",
+        apiSecret: options.apiSecret ?? process.env.SENDBLUE_API_SECRET ?? "",
+        defaultFromNumber:
+          options.defaultFromNumber ?? process.env.SENDBLUE_FROM_NUMBER ?? "",
+      })),
+    webhookSecret: options.webhookSecret ?? process.env.SENDBLUE_WEBHOOK_SECRET,
+    webhookSecretHeader: options.webhookSecretHeader,
+    webhookVerifier: options.webhookVerifier,
     statusCallbackUrl:
-      config?.statusCallbackUrl ?? process.env.SENDBLUE_STATUS_CALLBACK_URL,
-    allowedServices: config?.allowedServices,
-    logger: config?.logger,
+      options.statusCallbackUrl ?? process.env.SENDBLUE_STATUS_CALLBACK_URL,
+    allowedServices: options.allowedServices,
+    allowedFromNumbers: options.allowedFromNumbers,
+    logger: options.logger,
   });
 }
