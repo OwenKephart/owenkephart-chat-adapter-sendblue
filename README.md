@@ -228,7 +228,6 @@ credential.
 
 ## Adapter capabilities
 
-- Group media is sent through Sendblue's group-message endpoint.
 - Sendblue does not support editing or unsending a recipient-visible message,
   or removing a tapback.
 

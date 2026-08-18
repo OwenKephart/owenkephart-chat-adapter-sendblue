@@ -374,7 +374,7 @@ describe("SendblueAdapter", () => {
       expect(args.content).toBe("");
     });
 
-    test("sends media for group threads", async () => {
+    test("skips sending for group threads", async () => {
       const adapter = createAdapter();
       const threadId = adapter.encodeThreadId({
         fromNumber: "+13137386158",
@@ -384,12 +384,7 @@ describe("SendblueAdapter", () => {
       await adapter.sendMediaMessage(threadId, "https://example.com/file.vcf");
 
       expect(sendMock).not.toHaveBeenCalled();
-      expect(groupSendMock).toHaveBeenCalledWith({
-        from_number: "+13137386158",
-        content: "",
-        group_id: "group_xyz",
-        media_url: "https://example.com/file.vcf",
-      });
+      expect(groupSendMock).not.toHaveBeenCalled();
     });
   });
 

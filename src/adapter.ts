@@ -313,17 +313,9 @@ export class SendblueAdapter
     content?: string,
   ): Promise<void> {
     const decoded = this.decodeThreadId(threadId);
-    const sdk = await this.createSdk();
-    if (decoded.groupId) {
-      await sdk.groups.sendMessage({
-        from_number: decoded.fromNumber,
-        content: content ?? "",
-        group_id: decoded.groupId,
-        media_url: mediaUrl,
-      });
-      return;
-    }
+    if (decoded.groupId) return;
 
+    const sdk = await this.createSdk();
     await sdk.messages.send({
       number: decoded.contactNumber!,
       from_number: decoded.fromNumber,
