@@ -27,6 +27,7 @@ import type {
   SendblueAdapterConfig,
   SendblueCredentials,
   SendblueCredentialsProvider,
+  SendblueKeyPairCredentials,
   SendblueMessagePayload,
   SendblueReaction,
   SendblueThreadId,
@@ -111,25 +112,8 @@ export class SendblueAdapter
     request: Request,
     options?: WebhookOptions,
   ): Promise<Response> {
-    let rawBody: string;
-    try {
-      rawBody = await request.text();
-    } catch {
-      return new Response("Bad Request", { status: 400 });
-    }
-
-    if (this.config.webhookVerifier) {
-      try {
-        const verification = await this.config.webhookVerifier(request, rawBody);
-        if (verification instanceof Response) return verification;
-        if (!verification) return new Response("Unauthorized", { status: 401 });
-      } catch {
-        // Verifiers may include bearer-token details in their errors; do not
-        // expose those details through application logs.
-        this.logger.warn("Sendblue webhook verification failed");
-        return new Response("Unauthorized", { status: 401 });
-      }
-    } else if (this.config.webhookSecret) {
+    const verifier = this.config.webhookVerifier;
+    if (!verifier && this.config.webhookSecret) {
       const headerName =
         this.config.webhookSecretHeader ?? DEFAULT_WEBHOOK_SECRET_HEADER;
       const headerValue = request.headers.get(headerName);
@@ -138,6 +122,30 @@ export class SendblueAdapter
         this.logger.warn("Sendblue webhook secret mismatch", {
           header: headerName,
         });
+        return new Response("Unauthorized", { status: 401 });
+      }
+    }
+
+    // A verifier may need the raw body, but parsing still consumes the original
+    // request. Give it a clone so both operations can read the same payload.
+    let verifierRequest: Request | undefined;
+    let rawBody: string;
+    try {
+      verifierRequest = verifier ? request.clone() : undefined;
+      rawBody = await request.text();
+    } catch {
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    if (verifier) {
+      try {
+        const verification = await verifier(verifierRequest!, rawBody);
+        if (verification instanceof Response) return verification;
+        if (!verification) return new Response("Unauthorized", { status: 401 });
+      } catch {
+        // Verifiers may include bearer-token details in their errors; do not
+        // expose those details through application logs.
+        this.logger.warn("Sendblue webhook verification failed");
         return new Response("Unauthorized", { status: 401 });
       }
     }
@@ -173,7 +181,7 @@ export class SendblueAdapter
 
         return new Response("OK", { status: 200 });
       }
-      if (!(await this.isLineAllowed(payload))) {
+      if (!this.isLineAllowed(payload)) {
         this.logger.warn("Sendblue webhook filtered by line", {
           sendblueNumber: this.fromNumberFromPayload(payload),
         });
@@ -201,8 +209,6 @@ export class SendblueAdapter
     if (!this.chat) return;
 
     const threadId = this.threadIdFromPayload(payload);
-
-    this.markRead(threadId).catch(() => {});
 
     const factory = async (): Promise<Message<SendblueMessagePayload>> => {
       return this.parseMessage(payload);
@@ -546,6 +552,9 @@ export class SendblueAdapter
   private async createSdk(): Promise<SendblueAPI> {
     const credentials = await this.config.credentials();
     assertCredentials(credentials);
+    if ("accessToken" in credentials) {
+      return new SendblueAPI({ accessToken: credentials.accessToken });
+    }
     return new SendblueAPI({
       apiKey: credentials.apiKey,
       apiSecret: credentials.apiSecret,
@@ -607,17 +616,14 @@ export class SendblueAdapter
   }
 
   private fromNumberFromPayload(payload: SendblueMessagePayload): string {
-    const fromNumber =
+    return (
       payload.sendblue_number ??
-      (payload.is_outbound ? payload.from_number : payload.to_number);
-    if (!fromNumber) throw new Error("Sendblue webhook is missing its sending line.");
-    return fromNumber;
+      (payload.is_outbound ? payload.from_number : payload.to_number)
+    );
   }
 
-  private async isLineAllowed(payload: SendblueMessagePayload): Promise<boolean> {
-    const allowed =
-      this.config.allowedFromNumbers ?? [(await this.config.credentials()).defaultFromNumber];
-    return allowed.includes(this.fromNumberFromPayload(payload));
+  private isLineAllowed(payload: SendblueMessagePayload): boolean {
+    return this.config.allowedFromNumbers.includes(this.fromNumberFromPayload(payload));
   }
 
   private resolveReaction(name: string): SendblueReaction | null {
@@ -665,14 +671,19 @@ export class SendblueAdapter
 }
 
 interface SendblueAdapterRuntimeConfig
-  extends Omit<SendblueAdapterConfig, keyof SendblueCredentials> {
+  extends Omit<SendblueAdapterConfig, keyof SendblueKeyPairCredentials | "allowedFromNumbers"> {
   credentials: SendblueCredentialsProvider;
+  allowedFromNumbers: readonly string[];
   logger?: Logger;
 }
 
 function assertCredentials(
   credentials: SendblueCredentials,
 ): asserts credentials is SendblueCredentials {
+  if ("accessToken" in credentials) {
+    if (!credentials.accessToken) throw new Error("Sendblue access token is required.");
+    return;
+  }
   if (!credentials.apiKey) {
     throw new Error(
       "Sendblue API key is required. Pass it in config or set SENDBLUE_API_KEY.",
@@ -681,11 +692,6 @@ function assertCredentials(
   if (!credentials.apiSecret) {
     throw new Error(
       "Sendblue API secret is required. Pass it in config or set SENDBLUE_API_SECRET.",
-    );
-  }
-  if (!credentials.defaultFromNumber) {
-    throw new Error(
-      "Sendblue from_number is required. Pass it in config or set SENDBLUE_FROM_NUMBER.",
     );
   }
 }

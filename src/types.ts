@@ -1,10 +1,18 @@
 import type SendblueAPI from "sendblue";
 
-export interface SendblueCredentials {
+export interface SendblueKeyPairCredentials {
   apiKey: string;
   apiSecret: string;
-  defaultFromNumber: string;
 }
+
+export interface SendblueAccessTokenCredentials {
+  accessToken: string;
+}
+
+/** Credentials for direct Sendblue access or a short-lived Connect access token. */
+export type SendblueCredentials =
+  | SendblueKeyPairCredentials
+  | SendblueAccessTokenCredentials;
 
 /**
  * Verifies a webhook before its payload is parsed. A Connect integration can
@@ -20,7 +28,9 @@ export type SendblueCredentialsProvider = () =>
   | SendblueCredentials
   | Promise<SendblueCredentials>;
 
-export interface SendblueAdapterConfig extends SendblueCredentials {
+export interface SendblueAdapterConfig extends SendblueKeyPairCredentials {
+  /** Default Sendblue line for this adapter. */
+  defaultFromNumber: string;
   webhookSecret?: string;
   /**
    * Header name Sendblue uses to deliver the webhook secret.
