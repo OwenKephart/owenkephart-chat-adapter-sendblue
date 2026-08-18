@@ -11,8 +11,7 @@ export interface SendblueAccessTokenCredentials {
 
 /** Credentials for direct Sendblue access or a short-lived bearer token. */
 export type SendblueCredentials =
-  | SendblueKeyPairCredentials
-  | SendblueAccessTokenCredentials;
+  SendblueKeyPairCredentials | SendblueAccessTokenCredentials;
 
 /**
  * Verifies a webhook before its payload is parsed. A trusted proxy can
@@ -25,12 +24,14 @@ export type SendblueWebhookVerifier = (
 
 /** Resolves credentials before the adapter creates its Sendblue API client. */
 export type SendblueCredentialsProvider = () =>
-  | SendblueCredentials
-  | Promise<SendblueCredentials>;
+  SendblueCredentials | Promise<SendblueCredentials>;
+
+/** Resolves the selected Sendblue line after managed credentials are available. */
+export type SendblueFromNumber = string | (() => Promise<string>);
 
 export interface SendblueAdapterConfig extends SendblueKeyPairCredentials {
   /** Default Sendblue line for this adapter. */
-  defaultFromNumber: string;
+  defaultFromNumber: SendblueFromNumber;
   webhookSecret?: string;
   /**
    * Header name Sendblue uses to deliver the webhook secret.
@@ -49,7 +50,7 @@ export interface SendblueAdapterConfig extends SendblueKeyPairCredentials {
    * Sendblue lines accepted by this adapter. Defaults to the configured
    * `defaultFromNumber` so unrelated lines cannot share the same webhook.
    */
-  allowedFromNumbers?: readonly string[];
+  allowedFromNumbers?: readonly string[] | (() => Promise<readonly string[]>);
 }
 
 export type SendblueService = "iMessage" | "SMS" | "RCS" | "sms";
@@ -104,12 +105,7 @@ export interface SendblueTypingPayload {
 // ---------------------------------------------------------------------------
 
 export type SendblueReaction =
-  | "love"
-  | "like"
-  | "dislike"
-  | "laugh"
-  | "emphasize"
-  | "question";
+  "love" | "like" | "dislike" | "laugh" | "emphasize" | "question";
 
 export const VALID_REACTIONS: ReadonlySet<string> = new Set<SendblueReaction>([
   "love",

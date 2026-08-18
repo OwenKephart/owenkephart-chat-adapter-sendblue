@@ -14,12 +14,7 @@ import type {
   ThreadInfo,
   WebhookOptions,
 } from "chat";
-import {
-  ConsoleLogger,
-  Message,
-  parseMarkdown,
-  stringifyMarkdown,
-} from "chat";
+import { ConsoleLogger, Message, parseMarkdown, stringifyMarkdown } from "chat";
 import SendblueAPI from "sendblue";
 import { toPlainText } from "./format-converter";
 import type {
@@ -37,9 +32,10 @@ import { REACTION_ALIASES, VALID_REACTIONS } from "./types";
 const DEFAULT_WEBHOOK_SECRET_HEADER = "sb-signing-secret";
 const DEFAULT_ALLOWED_SERVICES = ["iMessage"];
 
-export class SendblueAdapter
-  implements Adapter<SendblueThreadId, SendblueMessagePayload>
-{
+export class SendblueAdapter implements Adapter<
+  SendblueThreadId,
+  SendblueMessagePayload
+> {
   readonly name = "sendblue";
   readonly persistMessageHistory = true;
   readonly userName: string;
@@ -180,7 +176,7 @@ export class SendblueAdapter
 
         return new Response("OK", { status: 200 });
       }
-      if (!this.isLineAllowed(payload)) {
+      if (!(await this.isLineAllowed(payload))) {
         this.logger.warn("Sendblue webhook filtered by line", {
           sendblueNumber: this.fromNumberFromPayload(payload),
         });
@@ -406,7 +402,9 @@ export class SendblueAdapter
       return;
     }
 
-    await (await this.createSdk()).post("/api/send-reaction", {
+    await (
+      await this.createSdk()
+    ).post("/api/send-reaction", {
       body: {
         from_number: decoded.fromNumber,
         message_handle: messageId,
@@ -436,7 +434,9 @@ export class SendblueAdapter
     const offset =
       options?.cursor != null ? Number.parseInt(options.cursor, 10) : 0;
 
-    const result = await (await this.createSdk()).messages.list({
+    const result = await (
+      await this.createSdk()
+    ).messages.list({
       limit,
       offset,
       order_by: "sentAt",
@@ -487,7 +487,9 @@ export class SendblueAdapter
     }
 
     try {
-      await (await this.createSdk()).typingIndicators.send({
+      await (
+        await this.createSdk()
+      ).typingIndicators.send({
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
       });
@@ -512,7 +514,9 @@ export class SendblueAdapter
     const decoded = this.decodeThreadId(threadId);
     if (!decoded.contactNumber) return;
 
-    await (await this.createSdk()).post("/api/mark-read", {
+    await (
+      await this.createSdk()
+    ).post("/api/mark-read", {
       body: {
         number: decoded.contactNumber,
         from_number: decoded.fromNumber,
@@ -625,8 +629,14 @@ export class SendblueAdapter
     );
   }
 
-  private isLineAllowed(payload: SendblueMessagePayload): boolean {
-    return this.config.allowedFromNumbers.includes(this.fromNumberFromPayload(payload));
+  private async isLineAllowed(
+    payload: SendblueMessagePayload,
+  ): Promise<boolean> {
+    const allowed =
+      typeof this.config.allowedFromNumbers === "function"
+        ? await this.config.allowedFromNumbers()
+        : this.config.allowedFromNumbers;
+    return allowed.includes(this.fromNumberFromPayload(payload));
   }
 
   private resolveReaction(name: string): SendblueReaction | null {
@@ -673,13 +683,14 @@ export class SendblueAdapter
   }
 }
 
-interface SendblueAdapterRuntimeConfig
-  extends Omit<SendblueAdapterConfig, keyof SendblueKeyPairCredentials | "allowedFromNumbers"> {
+interface SendblueAdapterRuntimeConfig extends Omit<
+  SendblueAdapterConfig,
+  keyof SendblueKeyPairCredentials
+> {
   /** Present for direct key-pair configuration. */
   sdk?: SendblueAPI;
   /** Present when credentials are resolved dynamically for each operation. */
   credentials?: SendblueCredentialsProvider;
-  allowedFromNumbers: readonly string[];
   logger?: Logger;
 }
 
@@ -687,7 +698,8 @@ function assertCredentials(
   credentials: SendblueCredentials,
 ): asserts credentials is SendblueCredentials {
   if ("accessToken" in credentials) {
-    if (!credentials.accessToken) throw new Error("Sendblue access token is required.");
+    if (!credentials.accessToken)
+      throw new Error("Sendblue access token is required.");
     return;
   }
   if (!credentials.apiKey) {

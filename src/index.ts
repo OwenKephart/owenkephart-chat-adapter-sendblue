@@ -42,7 +42,11 @@ export function createSendblueAdapter(
       "Sendblue from_number is required. Pass it in config or set SENDBLUE_FROM_NUMBER.",
     );
   }
-  const allowedFromNumbers = options.allowedFromNumbers ?? [defaultFromNumber];
+  const allowedFromNumbers =
+    options.allowedFromNumbers ??
+    (typeof defaultFromNumber === "string"
+      ? [defaultFromNumber]
+      : defaultFromNumber);
 
   const apiKey = options.apiKey ?? process.env.SENDBLUE_API_KEY;
   const apiSecret = options.apiSecret ?? process.env.SENDBLUE_API_SECRET;
