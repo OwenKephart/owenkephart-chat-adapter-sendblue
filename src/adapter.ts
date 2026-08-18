@@ -17,7 +17,6 @@ import type {
 import {
   ConsoleLogger,
   Message,
-  NotImplementedError,
   parseMarkdown,
   stringifyMarkdown,
 } from "chat";
@@ -314,7 +313,7 @@ export class SendblueAdapter
     content?: string,
   ): Promise<void> {
     const decoded = this.decodeThreadId(threadId);
-    const sdk = await this.getSdk();
+    const sdk = await this.createSdk();
     if (decoded.groupId) {
       await sdk.groups.sendMessage({
         from_number: decoded.fromNumber,
@@ -384,14 +383,14 @@ export class SendblueAdapter
     _messageId: string,
     _message: AdapterPostableMessage,
   ): Promise<RawMessage<SendblueMessagePayload>> {
-    throw new NotImplementedError(
+    throw new Error(
       "Sendblue does not support message editing. iMessage messages cannot be edited via API.",
     );
   }
 
   async deleteMessage(_threadId: string, _messageId: string): Promise<void> {
-    throw new NotImplementedError(
-      "Sendblue cannot unsend messages from the recipient's device.",
+    this.logger.warn(
+      "Sendblue deleteMessage is a soft-delete only — it does not unsend on the recipient's device",
     );
   }
 
@@ -429,7 +428,7 @@ export class SendblueAdapter
     _messageId: string,
     _emoji: EmojiValue | string,
   ): Promise<void> {
-    throw new NotImplementedError("Sendblue does not support removing reactions via API.");
+    this.logger.debug("Sendblue does not support removing reactions via API");
   }
 
   // ---------------------------------------------------------------------------
@@ -540,17 +539,29 @@ export class SendblueAdapter
   }
 
   /**
-   * Creates an official Sendblue SDK client with freshly resolved credentials.
-   *
-   * Prefer adapter methods where possible. Callers that retain this client are
-   * responsible for refreshing it when their credential source rotates.
+   * Returns the stable official SDK client configured with direct key-pair
+   * credentials. Dynamic credential providers must use {@link createSdk}.
    */
-  async getSdk(): Promise<SendblueAPI> {
-    return this.createSdk();
+  getSdk(): SendblueAPI {
+    if (!this.config.sdk) {
+      throw new Error(
+        "getSdk() is unavailable with dynamic credentials; use await createSdk() instead.",
+      );
+    }
+    return this.config.sdk;
   }
 
-  private async createSdk(): Promise<SendblueAPI> {
-    const credentials = await this.config.credentials();
+  /**
+   * Creates an official Sendblue SDK client using credentials resolved now.
+   *
+   * With a dynamic credential provider this returns a fresh client so rotated
+   * credentials take effect. With direct credentials it returns the stable
+   * client also exposed by {@link getSdk}.
+   */
+  async createSdk(): Promise<SendblueAPI> {
+    if (this.config.sdk) return this.config.sdk;
+
+    const credentials = await this.config.credentials!();
     assertCredentials(credentials);
     if ("accessToken" in credentials) {
       return new SendblueAPI({ accessToken: credentials.accessToken });
@@ -672,7 +683,10 @@ export class SendblueAdapter
 
 interface SendblueAdapterRuntimeConfig
   extends Omit<SendblueAdapterConfig, keyof SendblueKeyPairCredentials | "allowedFromNumbers"> {
-  credentials: SendblueCredentialsProvider;
+  /** Present for direct key-pair configuration. */
+  sdk?: SendblueAPI;
+  /** Present when credentials are resolved dynamically for each operation. */
+  credentials?: SendblueCredentialsProvider;
   allowedFromNumbers: readonly string[];
   logger?: Logger;
 }

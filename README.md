@@ -50,16 +50,16 @@ createSendblueAdapter({
 
 For deployments that obtain credentials at runtime, pass a `credentials`
 provider. It may return the normal Sendblue key pair or a short-lived bearer
-token from Vercel Connect. The adapter resolves it for every outbound API
-operation, so credential rotation does not require rebuilding the adapter:
+token. The adapter resolves it for every outbound API operation, so credential
+rotation does not require rebuilding the adapter:
 
 ```ts
-const phoneNumbers = ["+14155551234", "+14155559876"]; // Connect metadata
+const phoneNumbers = ["+14155551234", "+14155559876"];
 const selectedFromNumber = "+14155551234"; // Required when more than one line exists
 
 createSendblueAdapter({
   credentials: async () => ({
-    accessToken: "connect-short-lived-token",
+    accessToken: "short-lived-token",
   }),
   // The host chooses the outgoing line; webhook routing never fetches credentials.
   defaultFromNumber: selectedFromNumber,
@@ -67,12 +67,12 @@ createSendblueAdapter({
 });
 ```
 
-Connect keeps permanent Sendblue key pairs server-side. Its bearer token is sent
-as `Authorization: Bearer <token>` and is never converted into API-key headers.
-When Connect reports multiple lines, the consumer must choose the sending line;
-only a single returned line can be selected automatically. `getSdk()` returns a
-fresh official SDK client; callers that retain it are responsible for their own
-refresh policy.
+Bearer tokens are sent as `Authorization: Bearer <token>` and are never
+converted into API-key headers. When multiple lines are available, the consumer
+must choose the sending line; only a single returned line can be selected
+automatically. Dynamic credential providers should use `await createSdk()` when
+direct SDK access is needed; it returns a fresh client so callers that retain it
+are responsible for their own refresh policy.
 
 ## Webhooks
 
@@ -101,10 +101,9 @@ createSendblueAdapter({
 });
 ```
 
-For a trusted proxy such as Vercel Connect trigger forwarding, use
-`webhookVerifier`. It receives a readable clone of the request and the
-unparsed request body, runs before JSON parsing, and replaces the shared-secret
-check:
+For webhook delivery through a trusted proxy, use `webhookVerifier`. It
+receives a readable clone of the request and the unparsed request body, runs
+before JSON parsing, and replaces the shared-secret check:
 
 ```ts
 createSendblueAdapter({
@@ -131,7 +130,7 @@ Inbound media URLs from Sendblue are parsed into Chat SDK attachment objects wit
 
 ```ts
 const adapter = chat.getAdapter("sendblue") as SendblueAdapter;
-const sdk = await adapter.getSdk();
+const sdk = adapter.getSdk();
 await sdk.messages.send({
   number: "+15551234567",
   from_number: "+14155551234",
@@ -182,13 +181,21 @@ await adapter.markRead(threadId);
 
 ### Sendblue client access
 
-`getSdk()` returns a freshly authenticated official
-[Sendblue SDK](https://www.npmjs.com/package/sendblue) client. It works with
-both direct key-pair credentials and Vercel Connect bearer tokens:
+With direct API-key credentials, `getSdk()` returns the stable official
+[Sendblue SDK](https://www.npmjs.com/package/sendblue) client:
 
 ```ts
 const adapter = chat.getAdapter("sendblue") as SendblueAdapter;
-const client = await adapter.getSdk();
+const client = adapter.getSdk();
+await client.groups.sendMessage({ ... });
+```
+
+When configured with a dynamic credential provider, use
+`await createSdk()` instead. It resolves credentials for the call and returns a
+freshly authenticated client:
+
+```ts
+const client = await adapter.createSdk();
 await client.groups.sendMessage({ ... });
 ```
 
@@ -223,8 +230,7 @@ credential.
 
 - Group media is sent through Sendblue's group-message endpoint.
 - Sendblue does not support editing or unsending a recipient-visible message,
-  or removing a tapback. Those methods throw Chat SDK's
-  `NotImplementedError`, allowing hosts to degrade gracefully.
+  or removing a tapback.
 
 
 ## Thread ID format

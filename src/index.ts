@@ -1,4 +1,5 @@
 import type { Logger } from "chat";
+import SendblueAPI from "sendblue";
 import { SendblueAdapter } from "./adapter";
 import type {
   SendblueAdapterConfig,
@@ -43,14 +44,24 @@ export function createSendblueAdapter(
   }
   const allowedFromNumbers = options.allowedFromNumbers ?? [defaultFromNumber];
 
+  const apiKey = options.apiKey ?? process.env.SENDBLUE_API_KEY;
+  const apiSecret = options.apiSecret ?? process.env.SENDBLUE_API_SECRET;
+  if (!options.credentials && !apiKey) {
+    throw new Error(
+      "Sendblue API key is required. Pass it in config or set SENDBLUE_API_KEY.",
+    );
+  }
+  if (!options.credentials && !apiSecret) {
+    throw new Error(
+      "Sendblue API secret is required. Pass it in config or set SENDBLUE_API_SECRET.",
+    );
+  }
+
   return new SendblueAdapter({
-    defaultFromNumber: defaultFromNumber!,
-    credentials:
-      options.credentials ??
-      (() => ({
-        apiKey: options.apiKey ?? process.env.SENDBLUE_API_KEY ?? "",
-        apiSecret: options.apiSecret ?? process.env.SENDBLUE_API_SECRET ?? "",
-      })),
+    defaultFromNumber,
+    ...(options.credentials
+      ? { credentials: options.credentials }
+      : { sdk: new SendblueAPI({ apiKey, apiSecret }) }),
     webhookSecret: options.webhookSecret ?? process.env.SENDBLUE_WEBHOOK_SECRET,
     webhookSecretHeader: options.webhookSecretHeader,
     webhookVerifier: options.webhookVerifier,

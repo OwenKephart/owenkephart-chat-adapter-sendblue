@@ -9,14 +9,14 @@ export interface SendblueAccessTokenCredentials {
   accessToken: string;
 }
 
-/** Credentials for direct Sendblue access or a short-lived Connect access token. */
+/** Credentials for direct Sendblue access or a short-lived bearer token. */
 export type SendblueCredentials =
   | SendblueKeyPairCredentials
   | SendblueAccessTokenCredentials;
 
 /**
- * Verifies a webhook before its payload is parsed. A Connect integration can
- * validate its OIDC assertion here instead of requiring a Sendblue secret.
+ * Verifies a webhook before its payload is parsed. A trusted proxy can
+ * validate its assertion here instead of requiring a Sendblue secret.
  */
 export type SendblueWebhookVerifier = (
   request: Request,

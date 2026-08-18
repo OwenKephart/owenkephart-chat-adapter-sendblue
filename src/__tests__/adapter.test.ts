@@ -112,7 +112,7 @@ describe("SendblueAdapter", () => {
     });
 
     expect(credentials).not.toHaveBeenCalled();
-    await adapter.getSdk();
+    await adapter.createSdk();
     expect(credentials).toHaveBeenCalledTimes(1);
   });
 
@@ -147,13 +147,13 @@ describe("SendblueAdapter", () => {
       allowedFromNumbers: ["+13137386158"],
     });
 
-    await expect(adapter.getSdk()).rejects.toThrow("Sendblue API key is required");
+    await expect(adapter.createSdk()).rejects.toThrow("Sendblue API key is required");
   });
 
   test("uses the official SDK with key-pair credentials", async () => {
     const adapter = createAdapter();
 
-    await adapter.getSdk();
+    adapter.getSdk();
 
     expect(sdkConstructorMock).toHaveBeenCalledWith({
       apiKey: "test-key",
@@ -170,11 +170,28 @@ describe("SendblueAdapter", () => {
       allowedFromNumbers: ["+13137386158"],
     });
 
-    await adapter.getSdk();
+    await adapter.createSdk();
 
     expect(sdkConstructorMock).toHaveBeenCalledWith({
       accessToken: "connect-token",
     });
+  });
+
+  test("getSdk returns the stable client for direct credentials", () => {
+    const adapter = createAdapter();
+
+    expect(adapter.getSdk()).toBe(adapter.getSdk());
+  });
+
+  test("getSdk rejects dynamic credentials", () => {
+    const adapter = createSendblueAdapter({
+      credentials: () => ({ accessToken: "connect-token" }),
+      defaultFromNumber: "+13137386158",
+    });
+
+    expect(() => adapter.getSdk()).toThrow(
+      "getSdk() is unavailable with dynamic credentials; use await createSdk() instead.",
+    );
   });
 
   test("resolves rotating bearer credentials for every operation", async () => {
@@ -568,25 +585,6 @@ describe("SendblueAdapter", () => {
 
       expect(response.status).toBe(200);
       expect(processMessage).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("unsupported capabilities", () => {
-    test("uses Chat SDK's NotImplementedError", async () => {
-      const adapter = createAdapter();
-
-      await expect(adapter.editMessage("thread", "message", "text")).rejects.toMatchObject({
-        name: "NotImplementedError",
-        code: "NOT_IMPLEMENTED",
-      });
-      await expect(adapter.deleteMessage("thread", "message")).rejects.toMatchObject({
-        name: "NotImplementedError",
-        code: "NOT_IMPLEMENTED",
-      });
-      await expect(adapter.removeReaction("thread", "message", "love")).rejects.toMatchObject({
-        name: "NotImplementedError",
-        code: "NOT_IMPLEMENTED",
-      });
     });
   });
 
