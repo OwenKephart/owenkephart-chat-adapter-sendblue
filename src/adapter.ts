@@ -19,8 +19,6 @@ import SendblueAPI from "sendblue";
 import { toPlainText } from "./format-converter";
 import type {
   SendblueAdapterConfig,
-  SendblueCredentials,
-  SendblueCredentialsProvider,
   SendblueKeyPairCredentials,
   SendblueMessagePayload,
   SendblueReaction,
@@ -535,37 +533,31 @@ export class SendblueAdapter implements Adapter<
   }
 
   /**
-   * Returns the stable official SDK client configured with direct key-pair
-   * credentials. Dynamic credential providers must use {@link createSdk}.
+   * Returns the stable official SDK client configured with direct credentials.
+   * A lazy `accessToken` must use {@link createSdk}.
    */
   getSdk(): SendblueAPI {
     if (!this.config.sdk) {
       throw new Error(
-        "getSdk() is unavailable with dynamic credentials; use await createSdk() instead.",
+        "getSdk() is unavailable with a lazy accessToken; use await createSdk() instead.",
       );
     }
     return this.config.sdk;
   }
 
   /**
-   * Creates an official Sendblue SDK client using credentials resolved now.
+   * Creates an official Sendblue SDK client using the access token resolved now.
    *
-   * With a dynamic credential provider this returns a fresh client so rotated
-   * credentials take effect. With direct credentials it returns the stable
-   * client also exposed by {@link getSdk}.
+   * With a lazy access token this returns a fresh client so rotated tokens take
+   * effect. With direct credentials it returns the stable client also exposed
+   * by {@link getSdk}.
    */
   async createSdk(): Promise<SendblueAPI> {
     if (this.config.sdk) return this.config.sdk;
 
-    const credentials = await this.config.credentials!();
-    assertCredentials(credentials);
-    if ("accessToken" in credentials) {
-      return new SendblueAPI({ accessToken: credentials.accessToken });
-    }
-    return new SendblueAPI({
-      apiKey: credentials.apiKey,
-      apiSecret: credentials.apiSecret,
-    });
+    const accessToken = await this.config.accessToken?.();
+    if (!accessToken) throw new Error("Sendblue access token is required.");
+    return new SendblueAPI({ accessToken });
   }
 
   // ---------------------------------------------------------------------------
@@ -689,27 +681,8 @@ interface SendblueAdapterRuntimeConfig extends Omit<
 > {
   /** Present for direct key-pair configuration. */
   sdk?: SendblueAPI;
-  /** Present when credentials are resolved dynamically for each operation. */
-  credentials?: SendblueCredentialsProvider;
+  /** Present when a bearer token is resolved dynamically per operation. */
+  accessToken?: () => string | Promise<string>;
+  allowedFromNumbers: readonly string[] | (() => Promise<readonly string[]>);
   logger?: Logger;
-}
-
-function assertCredentials(
-  credentials: SendblueCredentials,
-): asserts credentials is SendblueCredentials {
-  if ("accessToken" in credentials) {
-    if (!credentials.accessToken)
-      throw new Error("Sendblue access token is required.");
-    return;
-  }
-  if (!credentials.apiKey) {
-    throw new Error(
-      "Sendblue API key is required. Pass it in config or set SENDBLUE_API_KEY.",
-    );
-  }
-  if (!credentials.apiSecret) {
-    throw new Error(
-      "Sendblue API secret is required. Pass it in config or set SENDBLUE_API_SECRET.",
-    );
-  }
 }

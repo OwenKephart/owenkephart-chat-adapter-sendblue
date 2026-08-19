@@ -1,22 +1,13 @@
 import type { Logger } from "chat";
 import SendblueAPI from "sendblue";
 import { SendblueAdapter } from "./adapter";
-import type {
-  SendblueAdapterConfig,
-  SendblueAccessTokenCredentials,
-  SendblueCredentials,
-  SendblueCredentialsProvider,
-  SendblueKeyPairCredentials,
-  SendblueWebhookVerifier,
-} from "./types";
+import type { SendblueAdapterConfig } from "./types";
 
 export { SendblueAdapter } from "./adapter";
 export { toPlainText } from "./format-converter";
 export type {
+  SendblueAccessToken,
   SendblueAdapterConfig,
-  SendblueAccessTokenCredentials,
-  SendblueCredentials,
-  SendblueCredentialsProvider,
   SendblueKeyPairCredentials,
   SendblueMessagePayload,
   SendblueWebhookVerifier,
@@ -28,7 +19,6 @@ export type {
 export { REACTION_ALIASES, VALID_REACTIONS } from "./types";
 
 export type SendblueAdapterOptions = Partial<SendblueAdapterConfig> & {
-  credentials?: SendblueCredentialsProvider;
   logger?: Logger;
 };
 
@@ -46,26 +36,36 @@ export function createSendblueAdapter(
     options.allowedFromNumbers ??
     (typeof defaultFromNumber === "string"
       ? [defaultFromNumber]
-      : defaultFromNumber);
+      : async () => [await defaultFromNumber()]);
 
+  const accessToken = options.accessToken;
+  if (accessToken === "") {
+    throw new Error("Sendblue access token is required.");
+  }
+  const hasAccessToken = accessToken !== undefined;
   const apiKey = options.apiKey ?? process.env.SENDBLUE_API_KEY;
   const apiSecret = options.apiSecret ?? process.env.SENDBLUE_API_SECRET;
-  if (!options.credentials && !apiKey) {
+  if (!hasAccessToken && !apiKey) {
     throw new Error(
-      "Sendblue API key is required. Pass it in config or set SENDBLUE_API_KEY.",
+      "Sendblue API key is required. Pass apiKey or accessToken in config, or set SENDBLUE_API_KEY.",
     );
   }
-  if (!options.credentials && !apiSecret) {
+  if (!hasAccessToken && !apiSecret) {
     throw new Error(
-      "Sendblue API secret is required. Pass it in config or set SENDBLUE_API_SECRET.",
+      "Sendblue API secret is required. Pass apiSecret or accessToken in config, or set SENDBLUE_API_SECRET.",
     );
   }
 
   return new SendblueAdapter({
     defaultFromNumber,
-    ...(options.credentials
-      ? { credentials: options.credentials }
-      : { sdk: new SendblueAPI({ apiKey, apiSecret }) }),
+    ...(typeof accessToken === "function"
+      ? { accessToken }
+      : {
+          sdk:
+            accessToken !== undefined
+              ? new SendblueAPI({ accessToken })
+              : new SendblueAPI({ apiKey, apiSecret }),
+        }),
     webhookSecret: options.webhookSecret ?? process.env.SENDBLUE_WEBHOOK_SECRET,
     webhookSecretHeader: options.webhookSecretHeader,
     webhookVerifier: options.webhookVerifier,

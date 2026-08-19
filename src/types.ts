@@ -5,13 +5,8 @@ export interface SendblueKeyPairCredentials {
   apiSecret: string;
 }
 
-export interface SendblueAccessTokenCredentials {
-  accessToken: string;
-}
-
-/** Credentials for direct Sendblue access or a short-lived bearer token. */
-export type SendblueCredentials =
-  SendblueKeyPairCredentials | SendblueAccessTokenCredentials;
+/** Direct bearer token or a lazy resolver for managed credentials. */
+export type SendblueAccessToken = string | (() => string | Promise<string>);
 
 /**
  * Verifies a webhook before its payload is parsed. A trusted proxy can
@@ -22,14 +17,12 @@ export type SendblueWebhookVerifier = (
   rawBody: string,
 ) => boolean | Response | Promise<boolean | Response>;
 
-/** Resolves credentials before the adapter creates its Sendblue API client. */
-export type SendblueCredentialsProvider = () =>
-  SendblueCredentials | Promise<SendblueCredentials>;
-
 /** Resolves the selected Sendblue line after managed credentials are available. */
 export type SendblueFromNumber = string | (() => Promise<string>);
 
 export interface SendblueAdapterConfig extends SendblueKeyPairCredentials {
+  /** Bearer token used instead of `apiKey` and `apiSecret` when provided. */
+  accessToken?: SendblueAccessToken;
   /** Default Sendblue line for this adapter. */
   defaultFromNumber: SendblueFromNumber;
   webhookSecret?: string;

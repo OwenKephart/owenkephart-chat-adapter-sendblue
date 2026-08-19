@@ -46,22 +46,19 @@ createSendblueAdapter({
 });
 ```
 
-### Lazy credentials
+### Lazy access tokens
 
-For deployments that obtain credentials at runtime, pass a `credentials`
-provider. It may return the normal Sendblue key pair or a short-lived bearer
-token. The adapter resolves it for every outbound API operation, so credential
-rotation does not require rebuilding the adapter:
+For deployments that obtain a short-lived bearer token at runtime, pass an
+`accessToken` resolver. The adapter invokes it for every outbound API operation,
+so token rotation does not require rebuilding the adapter:
 
 ```ts
 const phoneNumbers = ["+14155551234", "+14155559876"];
 const selectedFromNumber = "+14155551234"; // Required when more than one line exists
 
 createSendblueAdapter({
-  credentials: async () => ({
-    accessToken: "short-lived-token",
-  }),
-  // The host chooses the outgoing line; webhook routing never fetches credentials.
+  accessToken: async () => "short-lived-token",
+  // The host chooses the outgoing line; webhook routing never fetches the token.
   defaultFromNumber: selectedFromNumber,
   allowedFromNumbers: phoneNumbers,
 });
@@ -70,9 +67,9 @@ createSendblueAdapter({
 Bearer tokens are sent as `Authorization: Bearer <token>` and are never
 converted into API-key headers. When multiple lines are available, the consumer
 must choose the sending line; only a single returned line can be selected
-automatically. Dynamic credential providers should use `await createSdk()` when
-direct SDK access is needed; it returns a fresh client so callers that retain it
-are responsible for their own refresh policy.
+automatically. A lazy access token should use `await createSdk()` when direct
+SDK access is needed; it returns a fresh client so callers that retain it are
+responsible for their own refresh policy.
 
 ## Webhooks
 
@@ -190,9 +187,8 @@ const client = adapter.getSdk();
 await client.groups.sendMessage({ ... });
 ```
 
-When configured with a dynamic credential provider, use
-`await createSdk()` instead. It resolves credentials for the call and returns a
-freshly authenticated client:
+When configured with a lazy `accessToken`, use `await createSdk()` instead. It
+resolves the token for the call and returns a freshly authenticated client:
 
 ```ts
 const client = await adapter.createSdk();
@@ -221,10 +217,10 @@ createSendblueAdapter({
 });
 ```
 
-A dynamic `credentials` provider must configure either `allowedFromNumbers` or
+A lazy `accessToken` must configure either `allowedFromNumbers` or
 `defaultFromNumber`. Webhook line filtering is intentionally independent of
-credential resolution, so receiving a webhook never depends on fetching an API
-credential.
+token resolution, so receiving a webhook never depends on fetching an API
+token.
 
 ## Adapter capabilities
 

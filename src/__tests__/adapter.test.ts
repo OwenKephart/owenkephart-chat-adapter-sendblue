@@ -38,7 +38,9 @@ function createAdapter(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function installChatProcessMessageSpy(adapter: InstanceType<typeof SendblueAdapter>) {
+function installChatProcessMessageSpy(
+  adapter: InstanceType<typeof SendblueAdapter>,
+) {
   const processMessage = mock(() => Promise.resolve());
   adapter.initialize({
     getLogger: () => ({
@@ -95,62 +97,37 @@ describe("SendblueAdapter", () => {
   test("requires a sending line", () => {
     expect(() =>
       createSendblueAdapter({
-        credentials: () => ({ apiKey: "test-key", apiSecret: "test-secret" }),
+        accessToken: "connect-token",
       }),
     ).toThrow("Sendblue from_number is required");
   });
 
-  test("resolves credentials only when an SDK operation needs them", async () => {
-    const credentials = mock(() => ({
-      apiKey: "test-key",
-      apiSecret: "test-secret",
-    }));
+  test("resolves a lazy access token only when an SDK operation needs it", async () => {
+    const accessToken = mock(() => "connect-token");
     const adapter = createSendblueAdapter({
-      credentials,
+      accessToken,
       defaultFromNumber: "+13137386158",
       allowedFromNumbers: ["+13137386158"],
     });
 
-    expect(credentials).not.toHaveBeenCalled();
+    expect(accessToken).not.toHaveBeenCalled();
     await adapter.createSdk();
-    expect(credentials).toHaveBeenCalledTimes(1);
+    expect(accessToken).toHaveBeenCalledTimes(1);
   });
 
-  test("resolves fresh credentials for every SDK operation", async () => {
-    const credentials = mock(() => ({
-      apiKey: "test-key",
-      apiSecret: "test-secret",
-    }));
+  test("validates a lazy access token when an SDK operation needs it", async () => {
     const adapter = createSendblueAdapter({
-      credentials,
-      defaultFromNumber: "+13137386158",
-      allowedFromNumbers: ["+13137386158"],
-    });
-    const threadId = adapter.encodeThreadId({
-      fromNumber: "+13137386158",
-      contactNumber: "+14155551234",
-    });
-
-    await adapter.postMessage(threadId, "First");
-    await adapter.postMessage(threadId, "Second");
-
-    expect(credentials).toHaveBeenCalledTimes(2);
-  });
-
-  test("validates lazy credentials when an SDK operation needs them", async () => {
-    const adapter = createSendblueAdapter({
-      credentials: () => ({
-        apiKey: "",
-        apiSecret: "test-secret",
-      }),
+      accessToken: () => "",
       defaultFromNumber: "+13137386158",
       allowedFromNumbers: ["+13137386158"],
     });
 
-    await expect(adapter.createSdk()).rejects.toThrow("Sendblue API key is required");
+    await expect(adapter.createSdk()).rejects.toThrow(
+      "Sendblue access token is required",
+    );
   });
 
-  test("uses the official SDK with key-pair credentials", async () => {
+  test("uses the official SDK with key-pair credentials", () => {
     const adapter = createAdapter();
 
     adapter.getSdk();
@@ -161,16 +138,23 @@ describe("SendblueAdapter", () => {
     });
   });
 
-  test("uses the official SDK with bearer credentials", async () => {
-    const adapter = createSendblueAdapter({
-      credentials: () => ({
-        accessToken: "connect-token",
+  test("rejects an empty direct bearer token", () => {
+    expect(() =>
+      createSendblueAdapter({
+        accessToken: "",
+        defaultFromNumber: "+13137386158",
       }),
+    ).toThrow("Sendblue access token is required");
+  });
+
+  test("uses the official SDK with a direct bearer token", () => {
+    const adapter = createSendblueAdapter({
+      accessToken: "connect-token",
       defaultFromNumber: "+13137386158",
       allowedFromNumbers: ["+13137386158"],
     });
 
-    await adapter.createSdk();
+    adapter.getSdk();
 
     expect(sdkConstructorMock).toHaveBeenCalledWith({
       accessToken: "connect-token",
@@ -183,23 +167,22 @@ describe("SendblueAdapter", () => {
     expect(adapter.getSdk()).toBe(adapter.getSdk());
   });
 
-  test("getSdk rejects dynamic credentials", () => {
+  test("getSdk rejects a lazy access token", () => {
     const adapter = createSendblueAdapter({
-      credentials: () => ({ accessToken: "connect-token" }),
+      accessToken: () => "connect-token",
       defaultFromNumber: "+13137386158",
     });
 
     expect(() => adapter.getSdk()).toThrow(
-      "getSdk() is unavailable with dynamic credentials; use await createSdk() instead.",
+      "getSdk() is unavailable with a lazy accessToken; use await createSdk() instead.",
     );
   });
 
-  test("resolves rotating bearer credentials for every operation", async () => {
-    const credentials = mock(() => ({
-      accessToken: `token-${credentials.mock.calls.length + 1}`,
-    }));
+  test("resolves a rotating bearer token for every operation", async () => {
+    let tokenNumber = 0;
+    const accessToken = mock(() => `token-${++tokenNumber}`);
     const adapter = createSendblueAdapter({
-      credentials,
+      accessToken,
       defaultFromNumber: "+13137386158",
       allowedFromNumbers: ["+13137386158"],
     });
@@ -211,9 +194,13 @@ describe("SendblueAdapter", () => {
     await adapter.postMessage(threadId, "First");
     await adapter.postMessage(threadId, "Second");
 
-    expect(credentials).toHaveBeenCalledTimes(2);
-    expect(sdkConstructorMock).toHaveBeenNthCalledWith(1, { accessToken: "token-1" });
-    expect(sdkConstructorMock).toHaveBeenNthCalledWith(2, { accessToken: "token-2" });
+    expect(accessToken).toHaveBeenCalledTimes(2);
+    expect(sdkConstructorMock).toHaveBeenNthCalledWith(1, {
+      accessToken: "token-1",
+    });
+    expect(sdkConstructorMock).toHaveBeenNthCalledWith(2, {
+      accessToken: "token-2",
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -434,7 +421,9 @@ describe("SendblueAdapter", () => {
     });
 
     test("uses webhookVerifier before parsing and instead of the shared secret", async () => {
-      const verify = mock((_request: Request, rawBody: string) => rawBody === "{} ");
+      const verify = mock(
+        (_request: Request, rawBody: string) => rawBody === "{} ",
+      );
       const adapter = createAdapter({ webhookVerifier: verify });
       const request = new Request("https://example.com/webhook", {
         method: "POST",
@@ -505,7 +494,8 @@ describe("SendblueAdapter", () => {
 
     test("fails closed when webhookVerifier rejects", async () => {
       const adapter = createAdapter({
-        webhookVerifier: async () => Promise.reject(new Error("invalid OIDC token")),
+        webhookVerifier: async () =>
+          Promise.reject(new Error("invalid OIDC token")),
       });
       const request = new Request("https://example.com/webhook", {
         method: "POST",
@@ -530,13 +520,11 @@ describe("SendblueAdapter", () => {
       expect(response.status).toBe(400);
     });
 
-    test("does not resolve credentials while handling an inbound webhook", async () => {
-      const credentials = mock(() => ({
-        apiKey: "test-key",
-        apiSecret: "test-secret",
-      }));
+    test("does not resolve the access token while handling an inbound webhook", async () => {
+      const accessToken = mock(() => "connect-token");
       const adapter = createSendblueAdapter({
-        credentials,
+        accessToken,
+        defaultFromNumber: "+13137386158",
         allowedFromNumbers: ["+13137386158"],
         webhookSecret: "test-webhook-secret",
       });
@@ -549,7 +537,7 @@ describe("SendblueAdapter", () => {
 
       expect((await adapter.handleWebhook(request)).status).toBe(200);
       expect(processMessage).toHaveBeenCalledTimes(1);
-      expect(credentials).not.toHaveBeenCalled();
+      expect(accessToken).not.toHaveBeenCalled();
     });
 
     test("does not dispatch events for a different Sendblue line", async () => {
